@@ -105,11 +105,13 @@ const MY_PROJECTS_QUERY = /* GraphQL */ `
 
   query MyProjects {
     viewer {
+      login
       projectsV2(first: 50, orderBy: { field: UPDATED_AT, direction: DESC }) {
         nodes { ...ProjectBasics }
       }
       organizations(first: 100) {
         nodes {
+          login
           projectsV2(
             first: 50
             orderBy: { field: UPDATED_AT, direction: DESC }
@@ -135,11 +137,22 @@ interface GQLProjectNode {
 
 interface GQLMyProjectsResp {
   viewer: {
+    login: string;
     projectsV2: { nodes: GQLProjectNode[] };
     organizations: {
-      nodes: { projectsV2: { nodes: GQLProjectNode[] } }[];
+      nodes: {
+        login: string;
+        projectsV2: { nodes: GQLProjectNode[] };
+      }[];
     };
   };
+}
+
+export interface ProjectsResult {
+  projects: Project[];
+  viewerLogin: string;
+  viewerOwnCount: number;
+  orgs: { login: string; count: number }[];
 }
 
 function mapProjectNode(n: GQLProjectNode): Project {
@@ -158,7 +171,7 @@ function mapProjectNode(n: GQLProjectNode): Project {
   };
 }
 
-export async function fetchMyProjects(): Promise<Project[]> {
+export async function fetchMyProjects(): Promise<ProjectsResult> {
   const data: GQLMyProjectsResp = await gql<GQLMyProjectsResp>(
     MY_PROJECTS_QUERY,
   );
@@ -180,7 +193,16 @@ export async function fetchMyProjects(): Promise<Project[]> {
     (a, b) =>
       new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime(),
   );
-  return out;
+
+  return {
+    projects: out,
+    viewerLogin: data.viewer.login,
+    viewerOwnCount: data.viewer.projectsV2.nodes.length,
+    orgs: data.viewer.organizations.nodes.map((o) => ({
+      login: o.login,
+      count: o.projectsV2.nodes.length,
+    })),
+  };
 }
 
 // ---------------------------------------------------------------------------

@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import type { Project, Route } from "../types";
-import { fetchMyProjects } from "../lib/github";
+import { fetchMyProjects, type ProjectsResult } from "../lib/github";
 import { routeToPath } from "../lib/router";
 import { timeAgo } from "../lib/format";
 
@@ -24,12 +24,58 @@ function saveCache(projects: Project[]) {
   }
 }
 
+function EmptyDiagnostics({ meta }: { meta: ProjectsResult | null }) {
+  if (!meta) {
+    return (
+      <div className="flex items-center justify-center h-64 text-[var(--text-secondary)]">
+        No projects
+      </div>
+    );
+  }
+  const orgsWith = meta.orgs.filter((o) => o.count > 0);
+  return (
+    <div className="p-6 text-sm text-[var(--text-secondary)] space-y-3">
+      <p className="font-medium text-[var(--text-primary)]">No projects found</p>
+      <div className="space-y-1 mono text-xs">
+        <div>viewer: {meta.viewerLogin}</div>
+        <div>own projects: {meta.viewerOwnCount}</div>
+        <div>
+          orgs visible: {meta.orgs.length}
+          {meta.orgs.length > 0 &&
+            ` (${meta.orgs.map((o) => o.login).join(", ")})`}
+        </div>
+        <div>orgs with projects: {orgsWith.length}</div>
+      </div>
+      <ul className="text-xs list-disc pl-5 space-y-1">
+        {meta.orgs.length === 0 && (
+          <li>
+            Token can&apos;t see any orgs — classic PAT needs{" "}
+            <code>read:org</code>, fine-grained PAT needs org membership read.
+          </li>
+        )}
+        {meta.orgs.length > 0 && orgsWith.length === 0 && (
+          <li>
+            Orgs are visible but none expose Projects V2 to this token — check
+            per-org PAT access policy (some orgs block tokens unless SSO-enabled
+            or fine-grained PAT is explicitly approved).
+          </li>
+        )}
+        <li>
+          You can always open a known project directly:{" "}
+          <code>/&lt;owner&gt;/projects/&lt;number&gt;</code>.
+        </li>
+      </ul>
+    </div>
+  );
+}
+
 export default function ProjectList({
   navigate,
 }: {
   navigate: (r: Route) => void;
 }) {
   const [projects, setProjects] = useState<Project[]>(() => loadCache() ?? []);
+  const [meta, setMeta] = useState<ProjectsResult | null>(null);
   const [loading, setLoading] = useState(() => loadCache() === null);
   const [refreshing, setRefreshing] = useState(false);
   const [error, setError] = useState("");
@@ -46,10 +92,11 @@ export default function ProjectList({
     setError("");
 
     fetchMyProjects()
-      .then((list) => {
+      .then((result) => {
         if (cancelled) return;
-        setProjects(list);
-        saveCache(list);
+        setProjects(result.projects);
+        setMeta(result);
+        saveCache(result.projects);
         setLoading(false);
         setRefreshing(false);
       })
@@ -108,9 +155,7 @@ export default function ProjectList({
           Error: {error}
         </div>
       ) : visible.length === 0 ? (
-        <div className="flex items-center justify-center h-64 text-[var(--text-secondary)]">
-          No projects
-        </div>
+        <EmptyDiagnostics meta={meta} />
       ) : (
         <div className="divide-y divide-[var(--border)]">
           {visible.map((p) => {
