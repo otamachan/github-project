@@ -82,30 +82,39 @@ export async function verifyToken(token: string): Promise<string> {
 }
 
 // ---------------------------------------------------------------------------
-// Project list (the viewer's own projects)
+// Project list — the viewer's own projects plus projects owned by every org
+// the viewer belongs to. `viewer.projectsV2` on its own only returns projects
+// the viewer directly owns, which misses most real-world usage.
 // ---------------------------------------------------------------------------
 
-const VIEWER_PROJECTS_QUERY = /* GraphQL */ `
-  query ViewerProjects($cursor: String) {
+const MY_PROJECTS_QUERY = /* GraphQL */ `
+  fragment ProjectBasics on ProjectV2 {
+    id
+    number
+    title
+    shortDescription
+    url
+    closed
+    updatedAt
+    owner {
+      __typename
+      ... on User { login }
+      ... on Organization { login }
+    }
+  }
+
+  query MyProjects {
     viewer {
-      projectsV2(
-        first: 30
-        after: $cursor
-        orderBy: { field: UPDATED_AT, direction: DESC }
-      ) {
-        pageInfo { hasNextPage endCursor }
+      projectsV2(first: 50, orderBy: { field: UPDATED_AT, direction: DESC }) {
+        nodes { ...ProjectBasics }
+      }
+      organizations(first: 100) {
         nodes {
-          id
-          number
-          title
-          shortDescription
-          url
-          closed
-          updatedAt
-          owner {
-            __typename
-            ... on User { login }
-            ... on Organization { login }
+          projectsV2(
+            first: 50
+            orderBy: { field: UPDATED_AT, direction: DESC }
+          ) {
+            nodes { ...ProjectBasics }
           }
         }
       }
@@ -124,43 +133,53 @@ interface GQLProjectNode {
   owner: { __typename: string; login: string };
 }
 
-interface GQLViewerProjectsResp {
+interface GQLMyProjectsResp {
   viewer: {
-    projectsV2: {
-      pageInfo: { hasNextPage: boolean; endCursor: string | null };
-      nodes: GQLProjectNode[];
+    projectsV2: { nodes: GQLProjectNode[] };
+    organizations: {
+      nodes: { projectsV2: { nodes: GQLProjectNode[] } }[];
     };
   };
 }
 
+function mapProjectNode(n: GQLProjectNode): Project {
+  return {
+    id: n.id,
+    number: n.number,
+    title: n.title,
+    shortDescription: n.shortDescription,
+    url: n.url,
+    closed: n.closed,
+    updatedAt: n.updatedAt,
+    owner: {
+      kind: n.owner.__typename === "Organization" ? "Organization" : "User",
+      login: n.owner.login,
+    },
+  };
+}
+
 export async function fetchMyProjects(): Promise<Project[]> {
+  const data: GQLMyProjectsResp = await gql<GQLMyProjectsResp>(
+    MY_PROJECTS_QUERY,
+  );
+
+  const seen = new Set<string>();
   const out: Project[] = [];
-  let cursor: string | null = null;
-  // Usually a user doesn't have hundreds of projects, but paginate defensively.
-  for (let i = 0; i < 10; i++) {
-    const data: GQLViewerProjectsResp = await gql<GQLViewerProjectsResp>(
-      VIEWER_PROJECTS_QUERY,
-      { cursor },
-    );
-    for (const n of data.viewer.projectsV2.nodes) {
-      out.push({
-        id: n.id,
-        number: n.number,
-        title: n.title,
-        shortDescription: n.shortDescription,
-        url: n.url,
-        closed: n.closed,
-        updatedAt: n.updatedAt,
-        owner: {
-          kind: n.owner.__typename === "Organization" ? "Organization" : "User",
-          login: n.owner.login,
-        },
-      });
-    }
-    if (!data.viewer.projectsV2.pageInfo.hasNextPage) break;
-    cursor = data.viewer.projectsV2.pageInfo.endCursor;
-    if (!cursor) break;
+  const add = (n: GQLProjectNode) => {
+    if (seen.has(n.id)) return;
+    seen.add(n.id);
+    out.push(mapProjectNode(n));
+  };
+
+  for (const n of data.viewer.projectsV2.nodes) add(n);
+  for (const org of data.viewer.organizations.nodes) {
+    for (const n of org.projectsV2.nodes) add(n);
   }
+
+  out.sort(
+    (a, b) =>
+      new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime(),
+  );
   return out;
 }
 

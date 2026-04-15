@@ -35,10 +35,13 @@ export default function TokenInput({ onAuth }: { onAuth: () => void }) {
         <p className="text-[var(--text-secondary)] text-sm text-center">
           Enter your GitHub Personal Access Token.
           <br />
-          Classic: <code className="text-xs">project</code> scope (add{" "}
-          <code className="text-xs">repo</code> to see Issue / PR details).
+          Classic: <code className="text-xs">project</code> +{" "}
+          <code className="text-xs">read:org</code> (the latter is needed to
+          list org-owned projects; add <code className="text-xs">repo</code>{" "}
+          for Issue / PR details).
           <br />
-          Fine-grained: <strong>Projects</strong> read &amp; write.
+          Fine-grained: <strong>Projects</strong> read &amp; write + org
+          membership read.
         </p>
         <input
           type="text"
