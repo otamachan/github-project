@@ -49,6 +49,49 @@ function saveCollapsed(c: Record<string, boolean>) {
   }
 }
 
+/**
+ * Stale-while-revalidate cache for a single project's header + items, keyed
+ * by owner/number so switching projects doesn't clobber the other's cache.
+ * Re-entering the view (e.g. from item detail) paints instantly from the
+ * cached snapshot while a fresh fetch runs in the background.
+ */
+const VIEW_CACHE_PREFIX = "github-project-view-cache";
+
+interface ProjectViewCache {
+  project: ProjectDetail;
+  items: ProjectItem[];
+  nextCursor: string | null;
+}
+
+function viewCacheKey(owner: string, number: number): string {
+  return `${VIEW_CACHE_PREFIX}-${owner}-${number}`;
+}
+
+function loadViewCache(
+  owner: string,
+  number: number,
+): ProjectViewCache | null {
+  try {
+    const raw = localStorage.getItem(viewCacheKey(owner, number));
+    if (!raw) return null;
+    return JSON.parse(raw) as ProjectViewCache;
+  } catch {
+    return null;
+  }
+}
+
+function saveViewCache(
+  owner: string,
+  number: number,
+  data: ProjectViewCache,
+) {
+  try {
+    localStorage.setItem(viewCacheKey(owner, number), JSON.stringify(data));
+  } catch {
+    // ignore quota
+  }
+}
+
 export default function ProjectView({
   owner,
   number,
@@ -58,13 +101,24 @@ export default function ProjectView({
   number: number;
   navigate: (r: Route) => void;
 }) {
-  const [project, setProject] = useState<ProjectDetail | null>(null);
-  const [items, setItems] = useState<ProjectItem[]>([]);
-  const [nextCursor, setNextCursor] = useState<string | null>(null);
-  const [loading, setLoading] = useState(true);
+  const [project, setProject] = useState<ProjectDetail | null>(
+    () => loadViewCache(owner, number)?.project ?? null,
+  );
+  const [items, setItems] = useState<ProjectItem[]>(
+    () => loadViewCache(owner, number)?.items ?? [],
+  );
+  const [nextCursor, setNextCursor] = useState<string | null>(
+    () => loadViewCache(owner, number)?.nextCursor ?? null,
+  );
+  const [loading, setLoading] = useState(
+    () => loadViewCache(owner, number) === null,
+  );
+  const [refreshing, setRefreshing] = useState(false);
   const [loadingMore, setLoadingMore] = useState(false);
   const [error, setError] = useState("");
-  const [groupFieldId, setGroupFieldId] = useState<string | null>(null);
+  const [groupFieldId, setGroupFieldId] = useState<string | null>(
+    () => pickDefaultGroupField(loadViewCache(owner, number)?.project?.fields ?? []),
+  );
   const [collapsed, setCollapsedState] =
     useState<Record<string, boolean>>(loadCollapsed);
   const [showAddDraft, setShowAddDraft] = useState(false);
@@ -81,7 +135,12 @@ export default function ProjectView({
   );
 
   const reload = useCallback(() => {
-    setLoading(true);
+    const hasCache = loadViewCache(owner, number) !== null;
+    if (hasCache) {
+      setRefreshing(true);
+    } else {
+      setLoading(true);
+    }
     setError("");
     Promise.all([
       fetchProject(owner, number),
@@ -92,11 +151,19 @@ export default function ProjectView({
         setItems(page.items);
         setNextCursor(page.nextCursor);
         setGroupFieldId((prev) => prev ?? pickDefaultGroupField(p.fields));
+        saveViewCache(owner, number, {
+          project: p,
+          items: page.items,
+          nextCursor: page.nextCursor,
+        });
       })
       .catch((e: unknown) => {
         setError(e instanceof Error ? e.message : String(e));
       })
-      .finally(() => setLoading(false));
+      .finally(() => {
+        setLoading(false);
+        setRefreshing(false);
+      });
   }, [owner, number]);
 
   useEffect(() => {
@@ -108,8 +175,16 @@ export default function ProjectView({
     setLoadingMore(true);
     try {
       const page = await fetchProjectItems(owner, number, nextCursor);
-      setItems((prev) => [...prev, ...page.items]);
+      const merged = [...items, ...page.items];
+      setItems(merged);
       setNextCursor(page.nextCursor);
+      if (project) {
+        saveViewCache(owner, number, {
+          project,
+          items: merged,
+          nextCursor: page.nextCursor,
+        });
+      }
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e));
     } finally {
@@ -195,6 +270,12 @@ export default function ProjectView({
 
   return (
     <div>
+      {refreshing && (
+        <div className="px-4 py-1 text-[10px] text-[var(--text-secondary)] text-center bg-[var(--bg-secondary)]">
+          Refreshing...
+        </div>
+      )}
+
       {/* Header */}
       <div className="px-4 py-3 border-b border-[var(--border)]">
         <div className="flex items-center gap-2 text-xs text-[var(--text-secondary)] mb-1">
