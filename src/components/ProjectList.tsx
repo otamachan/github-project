@@ -47,19 +47,27 @@ function EmptyDiagnostics({ meta }: { meta: ProjectsResult | null }) {
         <div>orgs with projects: {orgsWith.length}</div>
       </div>
       <ul className="text-xs list-disc pl-5 space-y-1">
-        {meta.orgs.length === 0 && (
-          <li>
-            Token can&apos;t see any orgs — classic PAT needs{" "}
-            <code>read:org</code>, fine-grained PAT needs org membership read.
+        {meta.orgFetchError && (
+          <li className="text-[var(--danger)] break-words">
+            Org query failed — add <code>read:org</code> to your PAT to see
+            org-owned projects. Details: {meta.orgFetchError}
           </li>
         )}
-        {meta.orgs.length > 0 && orgsWith.length === 0 && (
+        {!meta.orgFetchError && meta.orgs.length === 0 && (
           <li>
-            Orgs are visible but none expose Projects V2 to this token — check
-            per-org PAT access policy (some orgs block tokens unless SSO-enabled
-            or fine-grained PAT is explicitly approved).
+            No orgs visible to this token. Fine-grained PATs also need org
+            membership read permission.
           </li>
         )}
+        {!meta.orgFetchError &&
+          meta.orgs.length > 0 &&
+          orgsWith.length === 0 && (
+            <li>
+              Orgs are visible but none expose Projects V2 to this token —
+              check per-org PAT access policy (some orgs block tokens unless
+              SSO-enabled or fine-grained PAT is explicitly approved).
+            </li>
+          )}
         <li>
           You can always open a known project directly:{" "}
           <code>/&lt;owner&gt;/projects/&lt;number&gt;</code>.

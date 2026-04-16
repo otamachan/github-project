@@ -87,7 +87,14 @@ export async function verifyToken(token: string): Promise<string> {
 // the viewer directly owns, which misses most real-world usage.
 // ---------------------------------------------------------------------------
 
-const MY_PROJECTS_QUERY = /* GraphQL */ `
+/**
+ * Split the project list into two queries:
+ *   1. Viewer's own projects — needs only the `project` scope.
+ *   2. Org-owned projects — additionally needs `read:org`.
+ * Keeping them separate means a token without `read:org` still gets a
+ * working (partial) list instead of a scope-error bailout.
+ */
+const PROJECT_FRAGMENT = /* GraphQL */ `
   fragment ProjectBasics on ProjectV2 {
     id
     number
@@ -102,13 +109,24 @@ const MY_PROJECTS_QUERY = /* GraphQL */ `
       ... on Organization { login }
     }
   }
+`;
 
-  query MyProjects {
+const VIEWER_OWN_QUERY = /* GraphQL */ `
+  ${PROJECT_FRAGMENT}
+  query ViewerOwn {
     viewer {
       login
       projectsV2(first: 50, orderBy: { field: UPDATED_AT, direction: DESC }) {
         nodes { ...ProjectBasics }
       }
+    }
+  }
+`;
+
+const ORG_PROJECTS_QUERY = /* GraphQL */ `
+  ${PROJECT_FRAGMENT}
+  query OrgProjects {
+    viewer {
       organizations(first: 100) {
         nodes {
           login
@@ -135,10 +153,15 @@ interface GQLProjectNode {
   owner: { __typename: string; login: string };
 }
 
-interface GQLMyProjectsResp {
+interface GQLViewerOwnResp {
   viewer: {
     login: string;
     projectsV2: { nodes: GQLProjectNode[] };
+  };
+}
+
+interface GQLOrgProjectsResp {
+  viewer: {
     organizations: {
       nodes: {
         login: string;
@@ -153,6 +176,8 @@ export interface ProjectsResult {
   viewerLogin: string;
   viewerOwnCount: number;
   orgs: { login: string; count: number }[];
+  /** Populated when the org query failed (e.g. missing read:org scope). */
+  orgFetchError: string | null;
 }
 
 function mapProjectNode(n: GQLProjectNode): Project {
@@ -172,9 +197,21 @@ function mapProjectNode(n: GQLProjectNode): Project {
 }
 
 export async function fetchMyProjects(): Promise<ProjectsResult> {
-  const data: GQLMyProjectsResp = await gql<GQLMyProjectsResp>(
-    MY_PROJECTS_QUERY,
-  );
+  const own: GQLViewerOwnResp = await gql<GQLViewerOwnResp>(VIEWER_OWN_QUERY);
+
+  let orgNodes: {
+    login: string;
+    projectsV2: { nodes: GQLProjectNode[] };
+  }[] = [];
+  let orgFetchError: string | null = null;
+  try {
+    const orgResp: GQLOrgProjectsResp = await gql<GQLOrgProjectsResp>(
+      ORG_PROJECTS_QUERY,
+    );
+    orgNodes = orgResp.viewer.organizations.nodes;
+  } catch (e) {
+    orgFetchError = e instanceof Error ? e.message : String(e);
+  }
 
   const seen = new Set<string>();
   const out: Project[] = [];
@@ -184,8 +221,8 @@ export async function fetchMyProjects(): Promise<ProjectsResult> {
     out.push(mapProjectNode(n));
   };
 
-  for (const n of data.viewer.projectsV2.nodes) add(n);
-  for (const org of data.viewer.organizations.nodes) {
+  for (const n of own.viewer.projectsV2.nodes) add(n);
+  for (const org of orgNodes) {
     for (const n of org.projectsV2.nodes) add(n);
   }
 
@@ -196,12 +233,13 @@ export async function fetchMyProjects(): Promise<ProjectsResult> {
 
   return {
     projects: out,
-    viewerLogin: data.viewer.login,
-    viewerOwnCount: data.viewer.projectsV2.nodes.length,
-    orgs: data.viewer.organizations.nodes.map((o) => ({
+    viewerLogin: own.viewer.login,
+    viewerOwnCount: own.viewer.projectsV2.nodes.length,
+    orgs: orgNodes.map((o) => ({
       login: o.login,
       count: o.projectsV2.nodes.length,
     })),
+    orgFetchError,
   };
 }
 
