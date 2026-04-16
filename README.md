@@ -2,6 +2,8 @@
 
 A mobile-friendly GitHub Projects (V2) viewer and light editor, built as a PWA.
 
+Live: https://otamachan.github.io/github-project/
+
 Sibling to [github-review](https://github.com/otamachan/github-review): reuses
 the same architecture (Vite + React + Tailwind + PAT in localStorage + PWA on
 GitHub Pages) but targets the **Projects V2** side of GitHub instead of the
