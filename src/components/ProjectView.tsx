@@ -432,6 +432,7 @@ export default function ProjectView({
       {showAddDraft && (
         <DraftItemForm
           projectId={project.id}
+          fields={project.fields}
           onDone={() => {
             setShowAddDraft(false);
             reload();
