@@ -8,6 +8,7 @@ import type {
 import { fetchItem, fetchProject, updateDraftIssue } from "../lib/github";
 import { iterationDates, selectColor, timeAgo } from "../lib/format";
 import FieldEditor from "./FieldEditor";
+import Markdown from "./Markdown";
 
 function contentTitle(item: ProjectItem): string {
   switch (item.content.kind) {
@@ -165,8 +166,8 @@ function DraftEditor({
           value={body}
           onChange={(e) => setBody(e.target.value)}
           placeholder="Body"
-          rows={6}
-          className="w-full px-3 py-2 rounded bg-[var(--bg-primary)] border border-[var(--border)] text-sm outline-none focus:border-[var(--accent)] resize-none"
+          rows={8}
+          className="w-full px-3 py-2 rounded bg-[var(--bg-primary)] border border-[var(--border)] text-sm outline-none focus:border-[var(--accent)] resize-none font-mono"
         />
         {error && <p className="text-[var(--danger)] text-xs">{error}</p>}
         <div className="flex gap-2">
@@ -190,69 +191,39 @@ function DraftEditor({
   );
 }
 
-/* ---------------- Item detail page ---------------- */
+/* ---------------- ItemDetailView — the pure render, reusable inline ---------------- */
 
-export default function ItemDetail({
-  owner,
-  number,
-  itemId,
+export function ItemDetailView({
+  project,
+  item,
+  onItemUpdated,
+  embedded = false,
 }: {
-  owner: string;
-  number: number;
-  itemId: string;
+  project: ProjectDetail;
+  item: ProjectItem;
+  onItemUpdated?: (item: ProjectItem) => void;
+  embedded?: boolean;
 }) {
-  const [project, setProject] = useState<ProjectDetail | null>(null);
-  const [item, setItem] = useState<ProjectItem | null>(null);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState("");
   const [editFieldId, setEditFieldId] = useState<string | null>(null);
   const [editingDraft, setEditingDraft] = useState(false);
 
-  const reload = useCallback(() => {
-    setLoading(true);
-    setError("");
-    Promise.all([fetchProject(owner, number), fetchItem(itemId)])
-      .then(([p, it]) => {
-        setProject(p);
-        setItem(it);
-      })
-      .catch((e: unknown) => {
-        setError(e instanceof Error ? e.message : String(e));
-      })
-      .finally(() => setLoading(false));
-  }, [owner, number, itemId]);
-
-  const reloadItem = useCallback(() => {
-    fetchItem(itemId).then(setItem).catch(() => {});
-  }, [itemId]);
-
-  useEffect(() => {
-    reload();
-  }, [reload]);
-
-  if (loading && !item) {
-    return (
-      <div className="flex items-center justify-center h-64 text-[var(--text-secondary)]">
-        Loading...
-      </div>
-    );
-  }
-  if (!item || !project) {
-    return (
-      <div className="p-4 text-[var(--danger)] text-sm break-words">
-        {error || "Item not found"}
-      </div>
-    );
-  }
+  const handleAfterEdit = useCallback(async () => {
+    try {
+      const fresh = await fetchItem(item.id);
+      onItemUpdated?.(fresh);
+    } catch {
+      // surfaced on the next full reload; swallow here so the editor
+      // modal still closes cleanly.
+    }
+  }, [item.id, onItemUpdated]);
 
   const editField = editFieldId
-    ? project.fields.find((f) => f.id === editFieldId) ?? null
+    ? (project.fields.find((f) => f.id === editFieldId) ?? null)
     : null;
 
   const c = item.content;
   const isDraft = c.kind === "DraftIssue";
-  const url =
-    c.kind === "Issue" || c.kind === "PullRequest" ? c.url : null;
+  const url = c.kind === "Issue" || c.kind === "PullRequest" ? c.url : null;
   const subtitle =
     c.kind === "Issue"
       ? `${c.repo}#${c.number} • ${c.state}`
@@ -262,43 +233,79 @@ export default function ItemDetail({
           ? "Draft"
           : "Redacted";
 
+  const body = c.kind === "DraftIssue" ? c.body : "";
+
   return (
-    <div>
-      {/* Header */}
-      <div className="px-4 py-3 border-b border-[var(--border)]">
-        <div className="flex items-center gap-2 text-xs text-[var(--text-secondary)] mb-1">
-          <span>{subtitle}</span>
-          {url && (
-            <a
-              href={url}
-              target="_blank"
-              rel="noopener noreferrer"
-              className="text-[var(--accent)] active:opacity-80"
-            >
-              Open on GitHub ↗
-            </a>
-          )}
-          <span className="ml-auto">{timeAgo(item.updatedAt)}</span>
-        </div>
-        <div className="flex items-start gap-2">
-          <h2 className="flex-1 text-base font-bold leading-snug break-words">
-            {contentTitle(item)}
-          </h2>
-          {isDraft && (
-            <button
-              onClick={() => setEditingDraft(true)}
-              className="text-xs px-2 py-1 rounded bg-[var(--bg-tertiary)] text-[var(--accent)] active:opacity-80"
-            >
-              Edit
-            </button>
-          )}
-        </div>
-        {isDraft && c.kind === "DraftIssue" && c.body && (
-          <div className="mt-2 text-sm text-[var(--text-secondary)] whitespace-pre-wrap break-words">
-            {c.body}
+    <div className={embedded ? "bg-[var(--bg-secondary)]" : ""}>
+      {/* Full header — only on the dedicated page, not when expanded inline */}
+      {!embedded && (
+        <div className="px-4 py-3 border-b border-[var(--border)]">
+          <div className="flex items-center gap-2 text-xs text-[var(--text-secondary)] mb-1">
+            <span>{subtitle}</span>
+            {url && (
+              <a
+                href={url}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="text-[var(--accent)] active:opacity-80"
+              >
+                Open on GitHub ↗
+              </a>
+            )}
+            <span className="ml-auto">{timeAgo(item.updatedAt)}</span>
           </div>
-        )}
-      </div>
+          <div className="flex items-start gap-2">
+            <h2 className="flex-1 text-base font-bold leading-snug break-words">
+              {contentTitle(item)}
+            </h2>
+            {isDraft && (
+              <button
+                onClick={() => setEditingDraft(true)}
+                className="text-xs px-2 py-1 rounded bg-[var(--bg-tertiary)] text-[var(--accent)] active:opacity-80"
+              >
+                Edit
+              </button>
+            )}
+          </div>
+        </div>
+      )}
+
+      {/* Compact link row — embedded mode only, for Issue / PR */}
+      {embedded && url && (
+        <div className="px-4 py-2 border-b border-[var(--border)] text-xs">
+          <a
+            href={url}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="text-[var(--accent)] active:opacity-80"
+          >
+            Open on GitHub ↗
+          </a>
+        </div>
+      )}
+
+      {/* Draft body with rendered markdown */}
+      {isDraft && (
+        <div className="px-4 py-3 border-b border-[var(--border)]">
+          {body ? (
+            <Markdown content={body} />
+          ) : (
+            <span className="text-xs text-[var(--text-secondary)]">
+              (no body)
+            </span>
+          )}
+          {embedded && (
+            <div className="mt-2">
+              <button
+                onClick={() => setEditingDraft(true)}
+                className="text-xs px-2 py-1 rounded bg-[var(--bg-tertiary)] text-[var(--accent)] active:opacity-80"
+              >
+                Edit draft
+              </button>
+            </div>
+          )}
+        </div>
+      )}
 
       {/* Fields */}
       <div className="divide-y divide-[var(--border)]">
@@ -346,7 +353,7 @@ export default function ItemDetail({
           current={item.fieldValues[editField.id]}
           onDone={() => {
             setEditFieldId(null);
-            reloadItem();
+            void handleAfterEdit();
           }}
           onCancel={() => setEditFieldId(null)}
         />
@@ -359,11 +366,65 @@ export default function ItemDetail({
           initialBody={c.body}
           onDone={() => {
             setEditingDraft(false);
-            reloadItem();
+            void handleAfterEdit();
           }}
           onCancel={() => setEditingDraft(false)}
         />
       )}
     </div>
+  );
+}
+
+/* ---------------- ItemDetailPage — stand-alone page (kept for /items/:id deep links) ---------------- */
+
+export default function ItemDetailPage({
+  owner,
+  number,
+  itemId,
+}: {
+  owner: string;
+  number: number;
+  itemId: string;
+}) {
+  const [project, setProject] = useState<ProjectDetail | null>(null);
+  const [item, setItem] = useState<ProjectItem | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState("");
+
+  const reload = useCallback(() => {
+    setLoading(true);
+    setError("");
+    Promise.all([fetchProject(owner, number), fetchItem(itemId)])
+      .then(([p, it]) => {
+        setProject(p);
+        setItem(it);
+      })
+      .catch((e: unknown) => {
+        setError(e instanceof Error ? e.message : String(e));
+      })
+      .finally(() => setLoading(false));
+  }, [owner, number, itemId]);
+
+  useEffect(() => {
+    reload();
+  }, [reload]);
+
+  if (loading && !item) {
+    return (
+      <div className="flex items-center justify-center h-64 text-[var(--text-secondary)]">
+        Loading...
+      </div>
+    );
+  }
+  if (!item || !project) {
+    return (
+      <div className="p-4 text-[var(--danger)] text-sm break-words">
+        {error || "Item not found"}
+      </div>
+    );
+  }
+
+  return (
+    <ItemDetailView project={project} item={item} onItemUpdated={setItem} />
   );
 }

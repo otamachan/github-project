@@ -1,14 +1,10 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
-import type {
-  FieldDef,
-  ProjectDetail,
-  ProjectItem,
-  Route,
-} from "../types";
+import type { FieldDef, ProjectDetail, ProjectItem } from "../types";
 import { fetchProject, fetchProjectItems } from "../lib/github";
 import { selectColor, timeAgo } from "../lib/format";
 import ItemRow from "./ItemRow";
 import DraftItemForm from "./DraftItemForm";
+import { ItemDetailView } from "./ItemDetail";
 
 const NONE_KEY = "__none__";
 
@@ -95,11 +91,9 @@ function saveViewCache(
 export default function ProjectView({
   owner,
   number,
-  navigate,
 }: {
   owner: string;
   number: number;
-  navigate: (r: Route) => void;
 }) {
   const [project, setProject] = useState<ProjectDetail | null>(
     () => loadViewCache(owner, number)?.project ?? null,
@@ -122,6 +116,24 @@ export default function ProjectView({
   const [collapsed, setCollapsedState] =
     useState<Record<string, boolean>>(loadCollapsed);
   const [showAddDraft, setShowAddDraft] = useState(false);
+  const [expandedItemId, setExpandedItemId] = useState<string | null>(null);
+
+  const handleItemUpdated = useCallback(
+    (updated: ProjectItem) => {
+      setItems((prev) => {
+        const next = prev.map((i) => (i.id === updated.id ? updated : i));
+        if (project) {
+          saveViewCache(owner, number, {
+            project,
+            items: next,
+            nextCursor,
+          });
+        }
+        return next;
+      });
+    },
+    [owner, number, project, nextCursor],
+  );
 
   const setCollapsed = useCallback(
     (updater: (prev: Record<string, boolean>) => Record<string, boolean>) => {
@@ -363,15 +375,32 @@ export default function ProjectView({
             </button>
             {!isCollapsed && (
               <div className="divide-y divide-[var(--border)]">
-                {bucket.items.map((item) => (
-                  <ItemRow
-                    key={item.id}
-                    item={item}
-                    owner={owner}
-                    number={number}
-                    navigate={navigate}
-                  />
-                ))}
+                {bucket.items.map((item) => {
+                  const isExpanded = item.id === expandedItemId;
+                  return (
+                    <div key={item.id}>
+                      <ItemRow
+                        item={item}
+                        expanded={isExpanded}
+                        onToggle={() =>
+                          setExpandedItemId((prev) =>
+                            prev === item.id ? null : item.id,
+                          )
+                        }
+                      />
+                      {isExpanded && (
+                        <div className="border-t border-[var(--border)]">
+                          <ItemDetailView
+                            project={project}
+                            item={item}
+                            onItemUpdated={handleItemUpdated}
+                            embedded
+                          />
+                        </div>
+                      )}
+                    </div>
+                  );
+                })}
               </div>
             )}
           </section>

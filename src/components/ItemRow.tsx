@@ -1,24 +1,14 @@
-import type { ProjectItem, Route } from "../types";
-import { routeToPath } from "../lib/router";
+import type { ProjectItem } from "../types";
 
 export default function ItemRow({
   item,
-  owner,
-  number,
-  navigate,
+  expanded,
+  onToggle,
 }: {
   item: ProjectItem;
-  owner: string;
-  number: number;
-  navigate: (r: Route) => void;
+  expanded: boolean;
+  onToggle: () => void;
 }) {
-  const route: Route = {
-    page: "item",
-    owner,
-    number,
-    itemId: item.id,
-  };
-
   const c = item.content;
   let title = "(empty)";
   let badge = "";
@@ -31,7 +21,7 @@ export default function ItemRow({
       break;
     case "Issue":
       title = c.title;
-      badge = `${c.state}`;
+      badge = c.state;
       subtitle = `${c.repo}#${c.number}`;
       break;
     case "PullRequest":
@@ -53,22 +43,26 @@ export default function ItemRow({
       : [];
 
   return (
-    <a
-      href={routeToPath(route)}
-      onClick={(e) => {
-        if (e.metaKey || e.ctrlKey || e.shiftKey || e.button !== 0) return;
-        e.preventDefault();
-        navigate(route);
-      }}
-      className="block px-4 py-3 active:bg-[var(--bg-tertiary)] transition-colors text-inherit no-underline"
+    <button
+      onClick={onToggle}
+      className={`w-full block text-left px-4 py-3 active:bg-[var(--bg-tertiary)] transition-colors ${
+        expanded ? "bg-[var(--bg-tertiary)]" : ""
+      }`}
     >
       <div className="flex items-center gap-2 text-[11px] text-[var(--text-secondary)] mb-1">
+        <span
+          className={`transition-transform inline-block text-[10px] ${
+            expanded ? "rotate-90" : ""
+          }`}
+        >
+          ▶
+        </span>
         {subtitle && <span className="truncate">{subtitle}</span>}
         <span className="ml-auto">{badge}</span>
       </div>
-      <div className="text-sm leading-snug break-words">{title}</div>
+      <div className="text-sm leading-snug break-words pl-4">{title}</div>
       {assignees.length > 0 && (
-        <div className="flex items-center gap-1 mt-2">
+        <div className="flex items-center gap-1 mt-2 pl-4">
           {assignees.slice(0, 5).map((u) => (
             <img
               key={u.login}
@@ -84,6 +78,6 @@ export default function ItemRow({
           )}
         </div>
       )}
-    </a>
+    </button>
   );
 }
