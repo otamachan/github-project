@@ -41,14 +41,26 @@ async function gqlWithToken<T>(
   query: string,
   variables: Record<string, unknown> = {},
 ): Promise<T> {
-  const res = await fetch(GRAPHQL_URL, {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-      Authorization: `bearer ${token}`,
-    },
-    body: JSON.stringify({ query, variables }),
-  });
+  let res: Response;
+  try {
+    res = await fetch(GRAPHQL_URL, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `bearer ${token}`,
+      },
+      body: JSON.stringify({ query, variables }),
+    });
+  } catch (e) {
+    // Safari surfaces every network-layer failure as "TypeError: Load failed"
+    // — rethrow with extra context so we can at least see which operation
+    // failed in the UI.
+    const op = /query\s+(\w+)/.exec(query)?.[1] ?? "request";
+    const msg = e instanceof Error ? e.message : String(e);
+    throw new Error(
+      `Network error during ${op} (likely CORS, offline, or blocked): ${msg}`,
+    );
+  }
   if (!res.ok) {
     throw new Error(`GitHub API ${res.status}: ${await res.text()}`);
   }
