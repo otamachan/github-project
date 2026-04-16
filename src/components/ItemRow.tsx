@@ -30,12 +30,14 @@ export default function ItemRow({
   groupFieldId,
   expanded,
   onToggle,
+  onEditField,
 }: {
   item: ProjectItem;
   fields: FieldDef[];
   groupFieldId: string | null;
   expanded: boolean;
   onToggle: () => void;
+  onEditField?: (itemId: string, fieldId: string) => void;
 }) {
   const c = item.content;
   const badge = typeBadge(c);
@@ -70,7 +72,7 @@ export default function ItemRow({
 
   // Collect single-select / iteration field values to show as chips,
   // excluding the field used for grouping (already visible as section header).
-  const fieldChips: { name: string; value: string; color: string }[] = [];
+  const fieldChips: { fieldId: string; name: string; value: string; color: string }[] = [];
   for (const f of fields) {
     if (f.id === groupFieldId) continue;
     if (f.kind !== "SINGLE_SELECT" && f.kind !== "ITERATION") continue;
@@ -78,12 +80,14 @@ export default function ItemRow({
     if (!v) continue;
     if (v.kind === "SINGLE_SELECT") {
       fieldChips.push({
+        fieldId: f.id,
         name: f.name,
         value: v.name,
         color: selectColor(v.color),
       });
     } else if (v.kind === "ITERATION") {
       fieldChips.push({
+        fieldId: f.id,
         name: f.name,
         value: v.title,
         color: selectColor("BLUE"),
@@ -128,7 +132,18 @@ export default function ItemRow({
           {fieldChips.map((chip) => (
             <span
               key={chip.name}
-              className="inline-flex items-center gap-1 px-1.5 py-px rounded text-[10px]"
+              role={onEditField ? "button" : undefined}
+              onClick={
+                onEditField
+                  ? (e) => {
+                      e.stopPropagation();
+                      onEditField(item.id, chip.fieldId);
+                    }
+                  : undefined
+              }
+              className={`inline-flex items-center gap-1 px-1.5 py-px rounded text-[10px] ${
+                onEditField ? "active:opacity-60" : ""
+              }`}
               style={{
                 backgroundColor: `${chip.color}18`,
                 color: chip.color,

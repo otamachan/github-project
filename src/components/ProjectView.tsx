@@ -1,9 +1,10 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import type { FieldDef, ProjectDetail, ProjectItem } from "../types";
-import { fetchProject, fetchProjectItems } from "../lib/github";
+import { fetchProject, fetchProjectItems, fetchItem } from "../lib/github";
 import { selectColor, timeAgo } from "../lib/format";
 import ItemRow from "./ItemRow";
 import DraftItemForm from "./DraftItemForm";
+import FieldEditor from "./FieldEditor";
 import { ItemDetailView } from "./ItemDetail";
 
 const NONE_KEY = "__none__";
@@ -117,6 +118,10 @@ export default function ProjectView({
     useState<Record<string, boolean>>(loadCollapsed);
   const [showAddDraft, setShowAddDraft] = useState(false);
   const [expandedItemId, setExpandedItemId] = useState<string | null>(null);
+  const [editingField, setEditingField] = useState<{
+    itemId: string;
+    fieldId: string;
+  } | null>(null);
 
   const handleItemUpdated = useCallback(
     (updated: ProjectItem) => {
@@ -389,6 +394,9 @@ export default function ProjectView({
                             prev === item.id ? null : item.id,
                           )
                         }
+                        onEditField={(itemId, fieldId) =>
+                          setEditingField({ itemId, fieldId })
+                        }
                       />
                       {isExpanded && (
                         <div className="border-t border-[var(--border)]">
@@ -431,6 +439,29 @@ export default function ProjectView({
           onCancel={() => setShowAddDraft(false)}
         />
       )}
+
+      {editingField && (() => {
+        const field = project.fields.find(
+          (f) => f.id === editingField.fieldId,
+        );
+        const item = items.find((i) => i.id === editingField.itemId);
+        if (!field || !item) return null;
+        return (
+          <FieldEditor
+            projectId={project.id}
+            itemId={item.id}
+            field={field}
+            current={item.fieldValues[field.id]}
+            onDone={() => {
+              setEditingField(null);
+              fetchItem(item.id)
+                .then((fresh) => handleItemUpdated(fresh))
+                .catch(() => {});
+            }}
+            onCancel={() => setEditingField(null)}
+          />
+        );
+      })()}
     </div>
   );
 }
