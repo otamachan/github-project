@@ -381,6 +381,8 @@ export default function ProjectView({
                     <div key={item.id}>
                       <ItemRow
                         item={item}
+                        fields={project.fields}
+                        groupFieldId={groupFieldId}
                         expanded={isExpanded}
                         onToggle={() =>
                           setExpandedItemId((prev) =>
