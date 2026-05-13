@@ -6,7 +6,7 @@ import type {
   ProjectItem,
 } from "../types";
 import { fetchItem, fetchProject, updateDraftIssue } from "../lib/github";
-import { iterationDates, selectColor, timeAgo } from "../lib/format";
+import { dateRelative, iterationDates, selectColor, timeAgo } from "../lib/format";
 import FieldEditor from "./FieldEditor";
 import Markdown from "./Markdown";
 
@@ -54,8 +54,22 @@ function renderFieldValue(v: FieldValue) {
       );
     case "NUMBER":
       return <span className="text-sm">{v.number}</span>;
-    case "DATE":
-      return <span className="text-sm">{v.date}</span>;
+    case "DATE": {
+      if (!v.date) {
+        return <span className="text-xs text-[var(--text-secondary)]">—</span>;
+      }
+      const rel = dateRelative(v.date);
+      return (
+        <span className="text-sm">
+          {v.date}
+          {rel && (
+            <span className="ml-2 text-xs text-[var(--text-secondary)]">
+              ({rel})
+            </span>
+          )}
+        </span>
+      );
+    }
     case "LABELS":
       return (
         <span className="flex flex-wrap gap-1">

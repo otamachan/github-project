@@ -1,5 +1,5 @@
 import type { FieldDef, ProjectItem, ItemContent } from "../types";
-import { selectColor } from "../lib/format";
+import { selectColor, shortDate } from "../lib/format";
 
 interface TypeBadge {
   label: string;
@@ -70,12 +70,17 @@ export default function ItemRow({
       ? assigneesValue.users
       : [];
 
-  // Collect single-select / iteration field values to show as chips,
+  // Collect single-select / iteration / date field values to show as chips,
   // excluding the field used for grouping (already visible as section header).
   const fieldChips: { fieldId: string; name: string; value: string; color: string }[] = [];
   for (const f of fields) {
     if (f.id === groupFieldId) continue;
-    if (f.kind !== "SINGLE_SELECT" && f.kind !== "ITERATION") continue;
+    if (
+      f.kind !== "SINGLE_SELECT" &&
+      f.kind !== "ITERATION" &&
+      f.kind !== "DATE"
+    )
+      continue;
     const v = item.fieldValues[f.id];
     if (!v) continue;
     if (v.kind === "SINGLE_SELECT") {
@@ -91,6 +96,13 @@ export default function ItemRow({
         name: f.name,
         value: v.title,
         color: selectColor("BLUE"),
+      });
+    } else if (v.kind === "DATE" && v.date) {
+      fieldChips.push({
+        fieldId: f.id,
+        name: f.name,
+        value: shortDate(v.date),
+        color: selectColor("GRAY"),
       });
     }
   }
