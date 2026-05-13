@@ -72,7 +72,10 @@ export default function DraftItemForm({
   };
 
   return (
-    <div className="fixed inset-0 z-30 flex items-end sm:items-center justify-center bg-black/50">
+    <div
+      data-pull-disable
+      className="fixed inset-0 z-30 flex items-end sm:items-center justify-center bg-black/50"
+    >
       <div className="w-full sm:max-w-md bg-[var(--bg-secondary)] border-t sm:border border-[var(--border)] sm:rounded-lg p-4 space-y-3 max-h-[85vh] overflow-y-auto">
         <h2 className="text-base font-bold">New draft item</h2>
         <input

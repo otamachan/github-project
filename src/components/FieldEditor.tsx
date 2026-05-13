@@ -93,6 +93,7 @@ export default function FieldEditor({
 
   return (
     <div
+      data-pull-disable
       className="fixed inset-0 z-30 flex items-end sm:items-center justify-center bg-black/50"
       onClick={onCancel}
     >

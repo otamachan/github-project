@@ -1,8 +1,9 @@
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import type { Project, Route } from "../types";
 import { fetchMyProjects, type ProjectsResult } from "../lib/github";
 import { routeToPath } from "../lib/router";
 import { timeAgo } from "../lib/format";
+import { usePullToRefresh } from "../hooks/usePullToRefresh";
 
 const CACHE_KEY = "github-project-list-cache";
 
@@ -89,35 +90,31 @@ export default function ProjectList({
   const [error, setError] = useState("");
   const [showClosed, setShowClosed] = useState(false);
 
-  useEffect(() => {
-    let cancelled = false;
-    const cached = loadCache();
-    if (cached) {
-      setRefreshing(true);
-    } else {
-      setLoading(true);
-    }
+  const reload = useCallback(async () => {
+    setRefreshing(true);
     setError("");
-
-    fetchMyProjects()
-      .then((result) => {
-        if (cancelled) return;
-        setProjects(result.projects);
-        setMeta(result);
-        saveCache(result.projects);
-        setLoading(false);
-        setRefreshing(false);
-      })
-      .catch((e: unknown) => {
-        if (cancelled) return;
-        setError(e instanceof Error ? e.message : String(e));
-        setLoading(false);
-        setRefreshing(false);
-      });
-    return () => {
-      cancelled = true;
-    };
+    try {
+      const result = await fetchMyProjects();
+      setProjects(result.projects);
+      setMeta(result);
+      saveCache(result.projects);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : String(e));
+    } finally {
+      setLoading(false);
+      setRefreshing(false);
+    }
   }, []);
+
+  useEffect(() => {
+    if (loadCache() === null) setLoading(true);
+    void reload();
+  }, [reload]);
+
+  const { armed: pullArmed } = usePullToRefresh({
+    onRefresh: reload,
+    enabled: !loading && !refreshing,
+  });
 
   const visible = showClosed
     ? projects
@@ -148,9 +145,9 @@ export default function ProjectList({
         </button>
       </div>
 
-      {refreshing && (
+      {(refreshing || pullArmed) && (
         <div className="px-4 py-1 text-[10px] text-[var(--text-secondary)] text-center bg-[var(--bg-secondary)]">
-          Refreshing...
+          {refreshing ? "Refreshing..." : "Release to refresh"}
         </div>
       )}
 

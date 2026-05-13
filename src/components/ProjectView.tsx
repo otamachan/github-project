@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import type { FieldDef, ProjectDetail, ProjectItem } from "../types";
 import { fetchProject, fetchProjectItems, fetchItem } from "../lib/github";
 import { selectColor, timeAgo } from "../lib/format";
+import { usePullToRefresh } from "../hooks/usePullToRefresh";
 import ItemRow from "./ItemRow";
 import DraftItemForm from "./DraftItemForm";
 import FieldEditor from "./FieldEditor";
@@ -187,6 +188,11 @@ export default function ProjectView({
     reload();
   }, [reload]);
 
+  const { armed: pullArmed } = usePullToRefresh({
+    onRefresh: reload,
+    enabled: !loading && !refreshing,
+  });
+
   const loadMore = async () => {
     if (!nextCursor || loadingMore) return;
     setLoadingMore(true);
@@ -287,9 +293,9 @@ export default function ProjectView({
 
   return (
     <div>
-      {refreshing && (
+      {(refreshing || pullArmed) && (
         <div className="px-4 py-1 text-[10px] text-[var(--text-secondary)] text-center bg-[var(--bg-secondary)]">
-          Refreshing...
+          {refreshing ? "Refreshing..." : "Release to refresh"}
         </div>
       )}
 
