@@ -41,3 +41,34 @@ export function iterationDates(startDate: string, duration: number): string {
     `${d.getUTCMonth() + 1}/${d.getUTCDate()}`;
   return `${f(start)}–${f(end)}`;
 }
+
+/** Compact "M/D" — DATE field chips on item rows. */
+export function shortDate(dateStr: string): string {
+  if (!dateStr) return "";
+  const d = new Date(dateStr);
+  if (Number.isNaN(d.getTime())) return dateStr;
+  return `${d.getUTCMonth() + 1}/${d.getUTCDate()}`;
+}
+
+/**
+ * Relative description of a DATE field value vs. today, in UTC days.
+ * Examples: "today", "in 3d", "5d ago", "in 2mo", "1y ago".
+ * Empty string for missing or unparseable input.
+ */
+export function dateRelative(dateStr: string): string {
+  if (!dateStr) return "";
+  const target = new Date(dateStr);
+  if (Number.isNaN(target.getTime())) return "";
+  const now = new Date();
+  const toUTC = (d: Date) =>
+    Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate());
+  const diffDays = Math.round((toUTC(target) - toUTC(now)) / 86_400_000);
+  if (diffDays === 0) return "today";
+  const abs = Math.abs(diffDays);
+  const future = diffDays > 0;
+  let body: string;
+  if (abs < 30) body = `${abs}d`;
+  else if (abs < 365) body = `${Math.floor(abs / 30)}mo`;
+  else body = `${Math.floor(abs / 365)}y`;
+  return future ? `in ${body}` : `${body} ago`;
+}
