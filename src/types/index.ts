@@ -63,6 +63,14 @@ export interface FieldDef {
   completedIterations?: IterationOption[];  // ITERATION — completed
 }
 
+export interface IssueParentRef {
+  id: string;
+  number: number;
+  title: string;
+  url: string;
+  repo: string;
+}
+
 export type ItemContent =
   | { kind: "DraftIssue"; draftId: string; title: string; body: string }
   | {
@@ -72,6 +80,7 @@ export type ItemContent =
       url: string;
       state: string;
       repo: string;
+      parent: IssueParentRef | null;
     }
   | {
       kind: "PullRequest";

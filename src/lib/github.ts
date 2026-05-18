@@ -439,6 +439,13 @@ const PROJECT_ITEMS_QUERY = /* GraphQL */ `
                   url
                   state
                   repository { nameWithOwner }
+                  parent {
+                    id
+                    number
+                    title
+                    url
+                    repository { nameWithOwner }
+                  }
                 }
                 ... on PullRequest {
                   title
@@ -539,6 +546,13 @@ interface GQLItemNode {
         url: string;
         state: string;
         repository: { nameWithOwner: string };
+        parent: {
+          id: string;
+          number: number;
+          title: string;
+          url: string;
+          repository: { nameWithOwner: string };
+        } | null;
       }
     | {
         __typename: "PullRequest";
@@ -581,6 +595,15 @@ function mapContent(c: GQLItemNode["content"]): ItemContent {
         url: c.url,
         state: c.state,
         repo: c.repository.nameWithOwner,
+        parent: c.parent
+          ? {
+              id: c.parent.id,
+              number: c.parent.number,
+              title: c.parent.title,
+              url: c.parent.url,
+              repo: c.parent.repository.nameWithOwner,
+            }
+          : null,
       };
     case "PullRequest":
       return {
@@ -658,6 +681,13 @@ const SINGLE_ITEM_QUERY = /* GraphQL */ `
             url
             state
             repository { nameWithOwner }
+            parent {
+              id
+              number
+              title
+              url
+              repository { nameWithOwner }
+            }
           }
           ... on PullRequest {
             title
