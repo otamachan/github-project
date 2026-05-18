@@ -1,5 +1,10 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
-import type { FieldDef, ProjectDetail, ProjectItem } from "../types";
+import type {
+  FieldDef,
+  IssueParentRef,
+  ProjectDetail,
+  ProjectItem,
+} from "../types";
 import { fetchProject, fetchProjectItems, fetchItem } from "../lib/github";
 import { selectColor, timeAgo } from "../lib/format";
 import ItemRow from "./ItemRow";
@@ -116,6 +121,7 @@ export default function ProjectView({
   );
   const [collapsed, setCollapsedState] =
     useState<Record<string, boolean>>(loadCollapsed);
+  const [parentFilterId, setParentFilterId] = useState<string>("");
   const [showAddDraft, setShowAddDraft] = useState(false);
   const [expandedItemId, setExpandedItemId] = useState<string | null>(null);
   const [editingField, setEditingField] = useState<{
@@ -214,10 +220,42 @@ export default function ProjectView({
     [project, groupFieldId],
   );
 
-  const buckets = useMemo(() => {
-    if (!groupField) return [{ key: NONE_KEY, label: "All", color: "", items }];
-    const byKey = new Map<string, ProjectItem[]>();
+  /**
+   * Unique set of parents referenced by any Issue item, keyed by parent.id.
+   * Includes parents that aren't themselves project items — that's the point
+   * of this filter: it follows GitHub's native sub-issue link, not project
+   * membership.
+   */
+  const parentCandidates = useMemo<IssueParentRef[]>(() => {
+    const byId = new Map<string, IssueParentRef>();
     for (const item of items) {
+      const c = item.content;
+      if (c.kind === "Issue" && c.parent) byId.set(c.parent.id, c.parent);
+    }
+    return Array.from(byId.values()).sort((a, b) => {
+      if (a.repo !== b.repo) return a.repo.localeCompare(b.repo);
+      return a.number - b.number;
+    });
+  }, [items]);
+
+  const selectedParent = useMemo(
+    () => parentCandidates.find((p) => p.id === parentFilterId) ?? null,
+    [parentCandidates, parentFilterId],
+  );
+
+  const filteredItems = useMemo(() => {
+    if (!parentFilterId) return items;
+    return items.filter((i) => {
+      const c = i.content;
+      return c.kind === "Issue" && c.parent?.id === parentFilterId;
+    });
+  }, [items, parentFilterId]);
+
+  const buckets = useMemo(() => {
+    if (!groupField)
+      return [{ key: NONE_KEY, label: "All", color: "", items: filteredItems }];
+    const byKey = new Map<string, ProjectItem[]>();
+    for (const item of filteredItems) {
       const key = groupKeyFor(item, groupField.id);
       const arr = byKey.get(key) ?? [];
       arr.push(item);
@@ -260,7 +298,7 @@ export default function ProjectView({
       items: byKey.get(NONE_KEY) ?? [],
     });
     return out;
-  }, [groupField, items]);
+  }, [groupField, filteredItems]);
 
   const singleSelectFields = useMemo(
     () =>
@@ -335,7 +373,9 @@ export default function ProjectView({
           ))}
         </select>
         <span className="ml-auto text-xs text-[var(--text-secondary)]">
-          {items.length} item{items.length === 1 ? "" : "s"}
+          {parentFilterId
+            ? `${filteredItems.length}/${items.length}`
+            : `${items.length} item${items.length === 1 ? "" : "s"}`}
         </span>
         <button
           onClick={() => setShowAddDraft(true)}
@@ -344,6 +384,34 @@ export default function ProjectView({
           + Draft
         </button>
       </div>
+
+      {/* Parent filter */}
+      {parentCandidates.length > 0 && (
+        <div className="flex items-center gap-2 px-4 py-2 border-b border-[var(--border)]">
+          <label className="text-xs text-[var(--text-secondary)]">Parent</label>
+          <select
+            value={parentFilterId}
+            onChange={(e) => setParentFilterId(e.target.value)}
+            className="flex-1 min-w-0 text-xs bg-[var(--bg-tertiary)] text-[var(--text-primary)] rounded px-2 py-1 outline-none"
+          >
+            <option value="">(all)</option>
+            {parentCandidates.map((p) => (
+              <option key={p.id} value={p.id}>
+                {p.repo}#{p.number} {p.title}
+              </option>
+            ))}
+          </select>
+          {selectedParent && (
+            <button
+              onClick={() => setParentFilterId("")}
+              className="text-xs px-2 py-1 rounded bg-[var(--bg-tertiary)] text-[var(--text-secondary)] active:opacity-80"
+              title="Clear filter"
+            >
+              ✕
+            </button>
+          )}
+        </div>
+      )}
 
       {error && (
         <div className="px-4 py-2 text-[var(--danger)] text-xs break-words">
