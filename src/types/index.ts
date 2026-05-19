@@ -75,6 +75,8 @@ export type ItemContent =
   | { kind: "DraftIssue"; draftId: string; title: string; body: string }
   | {
       kind: "Issue";
+      /** GitHub Issue node id — matches `parent.id` of any sub-issues. */
+      issueId: string;
       title: string;
       number: number;
       url: string;

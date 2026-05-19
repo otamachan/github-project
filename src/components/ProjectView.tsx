@@ -247,7 +247,8 @@ export default function ProjectView({
     if (!parentFilterId) return items;
     return items.filter((i) => {
       const c = i.content;
-      return c.kind === "Issue" && c.parent?.id === parentFilterId;
+      if (c.kind !== "Issue") return false;
+      return c.issueId === parentFilterId || c.parent?.id === parentFilterId;
     });
   }, [items, parentFilterId]);
 

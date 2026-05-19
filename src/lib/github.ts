@@ -434,6 +434,7 @@ const PROJECT_ITEMS_QUERY = /* GraphQL */ `
                   body
                 }
                 ... on Issue {
+                  id
                   title
                   number
                   url
@@ -541,6 +542,7 @@ interface GQLItemNode {
       }
     | {
         __typename: "Issue";
+        id: string;
         title: string;
         number: number;
         url: string;
@@ -590,6 +592,7 @@ function mapContent(c: GQLItemNode["content"]): ItemContent {
     case "Issue":
       return {
         kind: "Issue",
+        issueId: c.id,
         title: c.title,
         number: c.number,
         url: c.url,
@@ -676,6 +679,7 @@ const SINGLE_ITEM_QUERY = /* GraphQL */ `
             body
           }
           ... on Issue {
+            id
             title
             number
             url
