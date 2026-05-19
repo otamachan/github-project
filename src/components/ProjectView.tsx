@@ -267,6 +267,29 @@ export default function ProjectView({
     [parentCandidates, parentFilterId],
   );
 
+  /**
+   * Sub-issue progress per parent issue, computed from project items only.
+   * key = parent issue node id (matches `Issue.issueId` of the parent).
+   * Sub-issues outside the project aren't counted — accept that trade-off
+   * to avoid a separate GraphQL round trip.
+   */
+  const subIssueProgress = useMemo(() => {
+    const map = new Map<string, { total: number; closed: number }>();
+    for (const item of items) {
+      const c = item.content;
+      if (c.kind !== "Issue" || !c.parent) continue;
+      const cur = map.get(c.parent.id) ?? { total: 0, closed: 0 };
+      cur.total++;
+      if (c.state === "CLOSED") cur.closed++;
+      map.set(c.parent.id, cur);
+    }
+    return map;
+  }, [items]);
+
+  const selectedParentProgress = selectedParent
+    ? subIssueProgress.get(selectedParent.id) ?? null
+    : null;
+
   const filteredItems = useMemo(() => {
     if (!parentFilterId) return items;
     return items.filter((i) => {
@@ -426,6 +449,26 @@ export default function ProjectView({
               </option>
             ))}
           </select>
+          {selectedParentProgress && (
+            <span
+              className="inline-flex items-center gap-1 text-[10px] text-[var(--text-secondary)] tabular-nums"
+              title={`${selectedParentProgress.closed} of ${selectedParentProgress.total} sub-issues closed (project items only)`}
+            >
+              <span className="inline-block w-10 h-1 rounded-full bg-[var(--bg-tertiary)] overflow-hidden">
+                <span
+                  className="block h-full bg-[var(--accent)]"
+                  style={{
+                    width: `${Math.round(
+                      (selectedParentProgress.closed /
+                        selectedParentProgress.total) *
+                        100,
+                    )}%`,
+                  }}
+                />
+              </span>
+              {selectedParentProgress.closed}/{selectedParentProgress.total}
+            </span>
+          )}
           {selectedParent && (
             <button
               onClick={() => setParentFilterId("")}
@@ -489,6 +532,11 @@ export default function ProjectView({
                         }
                         onEditField={(itemId, fieldId) =>
                           setEditingField({ itemId, fieldId })
+                        }
+                        subIssueProgress={
+                          item.content.kind === "Issue"
+                            ? subIssueProgress.get(item.content.issueId) ?? null
+                            : null
                         }
                       />
                       {isExpanded && (

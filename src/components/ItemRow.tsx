@@ -24,6 +24,11 @@ function typeBadge(c: ItemContent): TypeBadge {
   }
 }
 
+export interface SubIssueProgress {
+  total: number;
+  closed: number;
+}
+
 export default function ItemRow({
   item,
   fields,
@@ -31,6 +36,7 @@ export default function ItemRow({
   expanded,
   onToggle,
   onEditField,
+  subIssueProgress,
 }: {
   item: ProjectItem;
   fields: FieldDef[];
@@ -38,6 +44,8 @@ export default function ItemRow({
   expanded: boolean;
   onToggle: () => void;
   onEditField?: (itemId: string, fieldId: string) => void;
+  /** Sub-issue progress derived from project items; null when this item has none. */
+  subIssueProgress?: SubIssueProgress | null;
 }) {
   const c = item.content;
   const badge = typeBadge(c);
@@ -137,6 +145,26 @@ export default function ItemRow({
           {badge.label}
         </span>
         {subtitle && <span className="truncate">{subtitle}</span>}
+        {subIssueProgress && subIssueProgress.total > 0 && (
+          <span
+            className="inline-flex items-center gap-1 ml-auto pl-2"
+            title={`${subIssueProgress.closed} of ${subIssueProgress.total} sub-issues closed (project items only)`}
+          >
+            <span className="inline-block w-10 h-1 rounded-full bg-[var(--bg-tertiary)] overflow-hidden">
+              <span
+                className="block h-full bg-[var(--accent)]"
+                style={{
+                  width: `${Math.round(
+                    (subIssueProgress.closed / subIssueProgress.total) * 100,
+                  )}%`,
+                }}
+              />
+            </span>
+            <span className="text-[10px] tabular-nums">
+              {subIssueProgress.closed}/{subIssueProgress.total}
+            </span>
+          </span>
+        )}
       </div>
       <div className="text-sm leading-snug break-words pl-4">{title}</div>
       {(fieldChips.length > 0 || assignees.length > 0) && (
