@@ -14,6 +14,14 @@ import { ItemDetailView } from "./ItemDetail";
 
 const NONE_KEY = "__none__";
 
+/**
+ * On reload, keep paging until we hit this many pages (or the cursor is
+ * exhausted). Beyond this, the user opts in to more via "Load more".
+ * Balances initial load latency against having enough items for the parent
+ * filter (which only sees items that have actually been fetched).
+ */
+const AUTO_PAGES = 3;
+
 function pickDefaultGroupField(fields: FieldDef[]): string | null {
   const singleSelects = fields.filter((f) => f.kind === "SINGLE_SELECT");
   const status = singleSelects.find(
@@ -157,7 +165,7 @@ export default function ProjectView({
     [],
   );
 
-  const reload = useCallback(() => {
+  const reload = useCallback(async () => {
     const hasCache = loadViewCache(owner, number) !== null;
     if (hasCache) {
       setRefreshing(true);
@@ -165,32 +173,48 @@ export default function ProjectView({
       setLoading(true);
     }
     setError("");
-    Promise.all([
-      fetchProject(owner, number),
-      fetchProjectItems(owner, number, null),
-    ])
-      .then(([p, page]) => {
-        setProject(p);
-        setItems(page.items);
-        setNextCursor(page.nextCursor);
-        setGroupFieldId((prev) => prev ?? pickDefaultGroupField(p.fields));
+    try {
+      const [p, firstPage] = await Promise.all([
+        fetchProject(owner, number),
+        fetchProjectItems(owner, number, null),
+      ]);
+      setProject(p);
+      setGroupFieldId((prev) => prev ?? pickDefaultGroupField(p.fields));
+
+      let collected = firstPage.items;
+      let cursor = firstPage.nextCursor;
+      setItems(collected);
+      setNextCursor(cursor);
+      saveViewCache(owner, number, {
+        project: p,
+        items: collected,
+        nextCursor: cursor,
+      });
+
+      let pagesFetched = 1;
+      while (cursor && pagesFetched < AUTO_PAGES) {
+        const next = await fetchProjectItems(owner, number, cursor);
+        collected = [...collected, ...next.items];
+        cursor = next.nextCursor;
+        pagesFetched++;
+        setItems(collected);
+        setNextCursor(cursor);
         saveViewCache(owner, number, {
           project: p,
-          items: page.items,
-          nextCursor: page.nextCursor,
+          items: collected,
+          nextCursor: cursor,
         });
-      })
-      .catch((e: unknown) => {
-        setError(e instanceof Error ? e.message : String(e));
-      })
-      .finally(() => {
-        setLoading(false);
-        setRefreshing(false);
-      });
+      }
+    } catch (e) {
+      setError(e instanceof Error ? e.message : String(e));
+    } finally {
+      setLoading(false);
+      setRefreshing(false);
+    }
   }, [owner, number]);
 
   useEffect(() => {
-    reload();
+    void reload();
   }, [reload]);
 
   const loadMore = async () => {
@@ -504,7 +528,7 @@ export default function ProjectView({
           fields={project.fields}
           onDone={() => {
             setShowAddDraft(false);
-            reload();
+            void reload();
           }}
           onCancel={() => setShowAddDraft(false)}
         />
