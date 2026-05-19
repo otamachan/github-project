@@ -784,7 +784,7 @@ export async function fetchProjectItems(
   owner: string,
   number: number,
   cursor: string | null = null,
-  pageSize = 50,
+  pageSize = 100,
 ): Promise<ItemsPage> {
   const data = await gql<GQLItemsResp>(PROJECT_ITEMS_QUERY, {
     owner,
