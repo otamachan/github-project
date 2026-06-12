@@ -532,7 +532,9 @@ export default function ProjectView({
 
       {/* Buckets */}
       {buckets.map((bucket) => {
-        const isCollapsed = !!collapsed[bucket.key];
+        // Default to collapsed for any bucket the user hasn't explicitly
+        // toggled — keeps the initial view compact on mobile.
+        const isCollapsed = collapsed[bucket.key] ?? true;
         if (bucket.items.length === 0 && bucket.key === NONE_KEY) return null;
         return (
           <section
