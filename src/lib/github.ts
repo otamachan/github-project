@@ -425,6 +425,7 @@ const PROJECT_ITEMS_QUERY = /* GraphQL */ `
             pageInfo { hasNextPage endCursor }
             nodes {
               id
+              isArchived
               updatedAt
               content {
                 __typename
@@ -532,6 +533,7 @@ interface GQLFieldValueNode {
 
 interface GQLItemNode {
   id: string;
+  isArchived: boolean;
   updatedAt: string;
   content:
     | {
@@ -670,6 +672,7 @@ const SINGLE_ITEM_QUERY = /* GraphQL */ `
       __typename
       ... on ProjectV2Item {
         id
+        isArchived
         updatedAt
         content {
           __typename
@@ -795,21 +798,26 @@ export async function fetchProjectItems(
   const page = data.repositoryOwner?.projectV2?.items;
   if (!page) return { items: [], nextCursor: null };
 
-  const items = page.nodes.map<ProjectItem>((n) => {
-    const fv: Record<string, FieldValue> = {};
-    for (const v of n.fieldValues.nodes) {
-      const fid = v.field?.id;
-      if (!fid) continue;
-      const mapped = mapFieldValue(v);
-      if (mapped) fv[fid] = mapped;
-    }
-    return {
-      id: n.id,
-      content: mapContent(n.content),
-      fieldValues: fv,
-      updatedAt: n.updatedAt,
-    };
-  });
+  // GitHub's projectV2.items query includes archived items by default,
+  // and there's no server-side filter to exclude them — drop them here so
+  // archived items don't reappear after a reload.
+  const items = page.nodes
+    .filter((n) => !n.isArchived)
+    .map<ProjectItem>((n) => {
+      const fv: Record<string, FieldValue> = {};
+      for (const v of n.fieldValues.nodes) {
+        const fid = v.field?.id;
+        if (!fid) continue;
+        const mapped = mapFieldValue(v);
+        if (mapped) fv[fid] = mapped;
+      }
+      return {
+        id: n.id,
+        content: mapContent(n.content),
+        fieldValues: fv,
+        updatedAt: n.updatedAt,
+      };
+    });
 
   return {
     items,
