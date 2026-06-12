@@ -321,43 +321,47 @@ export function ItemDetailView({
         </div>
       )}
 
-      {/* Fields */}
-      <div className="divide-y divide-[var(--border)]">
-        {project.fields
-          .filter((f) => f.kind !== "TITLE")
-          .map((f) => {
-            const value = item.fieldValues[f.id];
-            const editable = isEditable(f);
-            return (
-              <button
-                key={f.id}
-                onClick={() => {
-                  if (editable) setEditFieldId(f.id);
-                }}
-                disabled={!editable}
-                className="w-full flex items-start gap-3 px-4 py-3 text-left active:bg-[var(--bg-tertiary)] disabled:opacity-70"
-              >
-                <div className="w-28 flex-shrink-0 text-xs text-[var(--text-secondary)] pt-0.5">
-                  {f.name}
-                </div>
-                <div className="flex-1 min-w-0">
-                  {value ? (
-                    renderFieldValue(value)
-                  ) : (
+      {/* Fields — only on the dedicated detail page. In the inline expand,
+          chips on the row already convey the field values and tapping a chip
+          opens the editor, so a full field table here would be redundant. */}
+      {!embedded && (
+        <div className="divide-y divide-[var(--border)]">
+          {project.fields
+            .filter((f) => f.kind !== "TITLE")
+            .map((f) => {
+              const value = item.fieldValues[f.id];
+              const editable = isEditable(f);
+              return (
+                <button
+                  key={f.id}
+                  onClick={() => {
+                    if (editable) setEditFieldId(f.id);
+                  }}
+                  disabled={!editable}
+                  className="w-full flex items-start gap-3 px-4 py-3 text-left active:bg-[var(--bg-tertiary)] disabled:opacity-70"
+                >
+                  <div className="w-28 flex-shrink-0 text-xs text-[var(--text-secondary)] pt-0.5">
+                    {f.name}
+                  </div>
+                  <div className="flex-1 min-w-0">
+                    {value ? (
+                      renderFieldValue(value)
+                    ) : (
+                      <span className="text-xs text-[var(--text-secondary)]">
+                        —
+                      </span>
+                    )}
+                  </div>
+                  {editable && (
                     <span className="text-xs text-[var(--text-secondary)]">
-                      —
+                      ›
                     </span>
                   )}
-                </div>
-                {editable && (
-                  <span className="text-xs text-[var(--text-secondary)]">
-                    ›
-                  </span>
-                )}
-              </button>
-            );
-          })}
-      </div>
+                </button>
+              );
+            })}
+        </div>
+      )}
 
       {editField && (
         <FieldEditor
