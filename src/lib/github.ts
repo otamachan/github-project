@@ -916,3 +916,23 @@ export async function addDraftIssue(
   );
   return { itemId: data.addProjectV2DraftIssue.projectItem.id };
 }
+
+/**
+ * Archive a project item. Archived items are hidden from the default items
+ * query, so callers should drop the item from local state on success.
+ */
+export async function archiveItem(
+  projectId: string,
+  itemId: string,
+): Promise<void> {
+  await gql<unknown>(
+    /* GraphQL */ `
+      mutation Archive($input: ArchiveProjectV2ItemInput!) {
+        archiveProjectV2Item(input: $input) {
+          item { id }
+        }
+      }
+    `,
+    { input: { projectId, itemId } },
+  );
+}

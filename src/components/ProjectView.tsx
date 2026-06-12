@@ -5,7 +5,12 @@ import type {
   ProjectDetail,
   ProjectItem,
 } from "../types";
-import { fetchProject, fetchProjectItems, fetchItem } from "../lib/github";
+import {
+  archiveItem,
+  fetchProject,
+  fetchProjectItems,
+  fetchItem,
+} from "../lib/github";
 import { selectColor, timeAgo } from "../lib/format";
 import ItemRow from "./ItemRow";
 import DraftItemForm from "./DraftItemForm";
@@ -131,6 +136,7 @@ export default function ProjectView({
     useState<Record<string, boolean>>(loadCollapsed);
   const [parentFilterId, setParentFilterId] = useState<string>("");
   const [showAddDraft, setShowAddDraft] = useState(false);
+  const [archivingKey, setArchivingKey] = useState<string | null>(null);
   const [expandedItemId, setExpandedItemId] = useState<string | null>(null);
   const [editingField, setEditingField] = useState<{
     itemId: string;
@@ -163,6 +169,43 @@ export default function ProjectView({
       });
     },
     [],
+  );
+
+  /**
+   * Archive every item currently visible in the given bucket. Operates on the
+   * already-filtered set (so a parent filter narrows the scope); the caller
+   * passes the exact list to be archived.
+   */
+  const handleArchiveBucket = useCallback(
+    async (bucketKey: string, label: string, targets: ProjectItem[]) => {
+      if (!project || targets.length === 0) return;
+      const ok = window.confirm(
+        `Archive ${targets.length} item${targets.length === 1 ? "" : "s"} in "${label}"?`,
+      );
+      if (!ok) return;
+      setArchivingKey(bucketKey);
+      setError("");
+      try {
+        await Promise.all(
+          targets.map((it) => archiveItem(project.id, it.id)),
+        );
+        const archivedIds = new Set(targets.map((it) => it.id));
+        setItems((prev) => {
+          const next = prev.filter((i) => !archivedIds.has(i.id));
+          saveViewCache(owner, number, {
+            project,
+            items: next,
+            nextCursor,
+          });
+          return next;
+        });
+      } catch (e) {
+        setError(e instanceof Error ? e.message : String(e));
+      } finally {
+        setArchivingKey(null);
+      }
+    },
+    [project, owner, number, nextCursor],
   );
 
   const reload = useCallback(async () => {
@@ -496,24 +539,47 @@ export default function ProjectView({
             key={bucket.key}
             className="border-b border-[var(--border)]"
           >
-            <button
-              onClick={() =>
-                setCollapsed((prev) => ({ ...prev, [bucket.key]: !isCollapsed }))
-              }
-              className="w-full flex items-center gap-2 px-4 py-2 bg-[var(--bg-secondary)] active:opacity-80"
-            >
-              <span className="text-[10px]">{isCollapsed ? "▶" : "▼"}</span>
-              {bucket.color && (
-                <span
-                  className="inline-block w-2 h-2 rounded-full"
-                  style={{ background: bucket.color }}
-                />
+            <div className="w-full flex items-center bg-[var(--bg-secondary)]">
+              <button
+                onClick={() =>
+                  setCollapsed((prev) => ({
+                    ...prev,
+                    [bucket.key]: !isCollapsed,
+                  }))
+                }
+                className="flex-1 min-w-0 flex items-center gap-2 px-4 py-2 text-left active:opacity-80"
+              >
+                <span className="text-[10px]">{isCollapsed ? "▶" : "▼"}</span>
+                {bucket.color && (
+                  <span
+                    className="inline-block w-2 h-2 rounded-full"
+                    style={{ background: bucket.color }}
+                  />
+                )}
+                <span className="text-sm font-medium">{bucket.label}</span>
+                <span className="text-xs text-[var(--text-secondary)] ml-1">
+                  {bucket.items.length}
+                </span>
+              </button>
+              {bucket.items.length > 0 && (
+                <button
+                  onClick={() =>
+                    void handleArchiveBucket(
+                      bucket.key,
+                      bucket.label,
+                      bucket.items,
+                    )
+                  }
+                  disabled={archivingKey === bucket.key}
+                  className="text-[10px] mr-3 px-2 py-1 rounded text-[var(--text-secondary)] active:opacity-80 disabled:opacity-50"
+                  title={`Archive all ${bucket.items.length} item${
+                    bucket.items.length === 1 ? "" : "s"
+                  } in this column`}
+                >
+                  {archivingKey === bucket.key ? "Archiving..." : "Archive"}
+                </button>
               )}
-              <span className="text-sm font-medium">{bucket.label}</span>
-              <span className="text-xs text-[var(--text-secondary)] ml-1">
-                {bucket.items.length}
-              </span>
-            </button>
+            </div>
             {!isCollapsed && (
               <div className="divide-y divide-[var(--border)]">
                 {bucket.items.map((item) => {
