@@ -92,7 +92,11 @@ export default function App() {
 
       {route.page === "list" && <ProjectList navigate={setRoute} />}
       {route.page === "project" && (
-        <ProjectView owner={route.owner} number={route.number} />
+        <ProjectView
+          owner={route.owner}
+          number={route.number}
+          navigate={setRoute}
+        />
       )}
       {route.page === "item" && (
         <ItemDetail
