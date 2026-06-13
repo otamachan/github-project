@@ -41,6 +41,9 @@ export default function ItemRow({
   onToggle,
   onToggleFilter,
   isChipActive,
+  resumable,
+  resuming,
+  onResume,
   subIssueProgress,
 }: {
   item: ProjectItem;
@@ -52,6 +55,10 @@ export default function ItemRow({
   onToggleFilter?: (filter: ChipFilterToggle) => void;
   /** Lookup whether a chip's (fieldId, valueId) is currently filtering. */
   isChipActive?: (fieldId: string, valueId: string) => boolean;
+  /** True when the row's 状態 field is in a "suspend" option and resume is wired. */
+  resumable?: boolean;
+  resuming?: boolean;
+  onResume?: () => void;
   /** Sub-issue progress derived from project items; null when this item has none. */
   subIssueProgress?: SubIssueProgress | null;
 }) {
@@ -170,25 +177,44 @@ export default function ItemRow({
           {badge.label}
         </span>
         {subtitle && <span className="truncate">{subtitle}</span>}
-        {subIssueProgress && subIssueProgress.total > 0 && (
-          <span
-            className="inline-flex items-center gap-1 ml-auto pl-2"
-            title={`${subIssueProgress.closed} of ${subIssueProgress.total} sub-issues closed (project items only)`}
-          >
-            <span className="inline-block w-10 h-1 rounded-full bg-[var(--bg-tertiary)] overflow-hidden">
+        {((subIssueProgress && subIssueProgress.total > 0) ||
+          (resumable && onResume)) && (
+          <div className="ml-auto flex items-center gap-2 pl-2">
+            {subIssueProgress && subIssueProgress.total > 0 && (
               <span
-                className="block h-full bg-[var(--accent)]"
-                style={{
-                  width: `${Math.round(
-                    (subIssueProgress.closed / subIssueProgress.total) * 100,
-                  )}%`,
+                className="inline-flex items-center gap-1"
+                title={`${subIssueProgress.closed} of ${subIssueProgress.total} sub-issues closed (project items only)`}
+              >
+                <span className="inline-block w-10 h-1 rounded-full bg-[var(--bg-tertiary)] overflow-hidden">
+                  <span
+                    className="block h-full bg-[var(--accent)]"
+                    style={{
+                      width: `${Math.round(
+                        (subIssueProgress.closed / subIssueProgress.total) *
+                          100,
+                      )}%`,
+                    }}
+                  />
+                </span>
+                <span className="text-[10px] tabular-nums">
+                  {subIssueProgress.closed}/{subIssueProgress.total}
+                </span>
+              </span>
+            )}
+            {resumable && onResume && (
+              <button
+                onClick={(e) => {
+                  e.stopPropagation();
+                  if (!resuming) onResume();
                 }}
-              />
-            </span>
-            <span className="text-[10px] tabular-nums">
-              {subIssueProgress.closed}/{subIssueProgress.total}
-            </span>
-          </span>
+                disabled={resuming}
+                className="text-[10px] px-2 py-0.5 rounded bg-[var(--accent)] text-white active:opacity-80 disabled:opacity-50"
+                title="Set 状態 to resume-pending"
+              >
+                {resuming ? "..." : "▶ Resume"}
+              </button>
+            )}
+          </div>
         )}
       </div>
       <div className="text-sm leading-snug break-words pl-4">{title}</div>
