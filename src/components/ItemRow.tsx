@@ -44,6 +44,9 @@ export default function ItemRow({
   resumable,
   resuming,
   onResume,
+  stoppable,
+  stopping,
+  onStop,
   subIssueProgress,
 }: {
   item: ProjectItem;
@@ -59,6 +62,10 @@ export default function ItemRow({
   resumable?: boolean;
   resuming?: boolean;
   onResume?: () => void;
+  /** True when the row can be moved to the "閉じて" column (and isn't already). */
+  stoppable?: boolean;
+  stopping?: boolean;
+  onStop?: () => void;
   /** Sub-issue progress derived from project items; null when this item has none. */
   subIssueProgress?: SubIssueProgress | null;
 }) {
@@ -178,7 +185,8 @@ export default function ItemRow({
         </span>
         {subtitle && <span className="truncate">{subtitle}</span>}
         {((subIssueProgress && subIssueProgress.total > 0) ||
-          (resumable && onResume)) && (
+          (resumable && onResume) ||
+          (stoppable && onStop)) && (
           <div className="ml-auto flex items-center gap-2 pl-2">
             {subIssueProgress && subIssueProgress.total > 0 && (
               <span
@@ -212,6 +220,19 @@ export default function ItemRow({
                 title="Set 状態 to resume-pending"
               >
                 {resuming ? "..." : "▶ Resume"}
+              </button>
+            )}
+            {stoppable && onStop && (
+              <button
+                onClick={(e) => {
+                  e.stopPropagation();
+                  if (!stopping) onStop();
+                }}
+                disabled={stopping}
+                className="text-[10px] px-2 py-0.5 rounded bg-[var(--bg-tertiary)] text-[var(--text-secondary)] border border-[var(--border)] active:opacity-80 disabled:opacity-50"
+                title="Move to 閉じて"
+              >
+                {stopping ? "..." : "■ Stop"}
               </button>
             )}
           </div>
