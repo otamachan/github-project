@@ -29,13 +29,18 @@ export interface SubIssueProgress {
   closed: number;
 }
 
+export type ChipFilterToggle =
+  | { kind: "single_select"; fieldId: string; optionId: string }
+  | { kind: "iteration"; fieldId: string; iterationId: string };
+
 export default function ItemRow({
   item,
   fields,
   groupFieldId,
   expanded,
   onToggle,
-  onEditField,
+  onToggleFilter,
+  isChipActive,
   subIssueProgress,
 }: {
   item: ProjectItem;
@@ -43,7 +48,10 @@ export default function ItemRow({
   groupFieldId: string | null;
   expanded: boolean;
   onToggle: () => void;
-  onEditField?: (itemId: string, fieldId: string) => void;
+  /** Tap a chip to add/remove a filter for that value. Omitted = chips are display-only. */
+  onToggleFilter?: (filter: ChipFilterToggle) => void;
+  /** Lookup whether a chip's (fieldId, valueId) is currently filtering. */
+  isChipActive?: (fieldId: string, valueId: string) => boolean;
   /** Sub-issue progress derived from project items; null when this item has none. */
   subIssueProgress?: SubIssueProgress | null;
 }) {
@@ -80,7 +88,18 @@ export default function ItemRow({
 
   // Collect single-select / iteration / date field values to show as chips,
   // excluding the field used for grouping (already visible as section header).
-  const fieldChips: { fieldId: string; name: string; value: string; color: string }[] = [];
+  // The chip carries the info needed to toggle a filter on the row's value;
+  // DATE chips are non-filterable (treated as display-only).
+  type ChipKind = "single_select" | "iteration" | "date";
+  const fieldChips: {
+    fieldId: string;
+    name: string;
+    value: string;
+    color: string;
+    chipKind: ChipKind;
+    /** SINGLE_SELECT.optionId or ITERATION.iterationId; "" for date */
+    valueId: string;
+  }[] = [];
   for (const f of fields) {
     if (f.id === groupFieldId) continue;
     if (
@@ -97,6 +116,8 @@ export default function ItemRow({
         name: f.name,
         value: v.name,
         color: selectColor(v.color),
+        chipKind: "single_select",
+        valueId: v.optionId,
       });
     } else if (v.kind === "ITERATION") {
       fieldChips.push({
@@ -104,6 +125,8 @@ export default function ItemRow({
         name: f.name,
         value: v.title,
         color: selectColor("BLUE"),
+        chipKind: "iteration",
+        valueId: v.iterationId,
       });
     } else if (v.kind === "DATE" && v.date) {
       fieldChips.push({
@@ -111,6 +134,8 @@ export default function ItemRow({
         name: f.name,
         value: shortDate(v.date),
         color: selectColor("GRAY"),
+        chipKind: "date",
+        valueId: "",
       });
     }
   }
@@ -169,31 +194,58 @@ export default function ItemRow({
       <div className="text-sm leading-snug break-words pl-4">{title}</div>
       {(fieldChips.length > 0 || assignees.length > 0) && (
         <div className="flex flex-wrap items-center gap-1.5 mt-1.5 pl-4">
-          {fieldChips.map((chip) => (
-            <span
-              key={chip.name}
-              role={onEditField ? "button" : undefined}
-              onClick={
-                onEditField
-                  ? (e) => {
-                      e.stopPropagation();
-                      onEditField(item.id, chip.fieldId);
-                    }
-                  : undefined
-              }
-              className={`inline-flex items-center gap-1 px-1.5 py-px rounded text-[10px] ${
-                onEditField ? "active:opacity-60" : ""
-              }`}
-              style={{
-                backgroundColor: `${chip.color}18`,
-                color: chip.color,
-                border: `1px solid ${chip.color}33`,
-              }}
-              title={chip.name}
-            >
-              {chip.value}
-            </span>
-          ))}
+          {fieldChips.map((chip) => {
+            const filterable =
+              chip.chipKind !== "date" && !!onToggleFilter;
+            const active =
+              filterable &&
+              !!isChipActive?.(chip.fieldId, chip.valueId);
+            return (
+              <span
+                key={chip.name}
+                role={filterable ? "button" : undefined}
+                onClick={
+                  filterable
+                    ? (e) => {
+                        e.stopPropagation();
+                        if (chip.chipKind === "single_select") {
+                          onToggleFilter!({
+                            kind: "single_select",
+                            fieldId: chip.fieldId,
+                            optionId: chip.valueId,
+                          });
+                        } else if (chip.chipKind === "iteration") {
+                          onToggleFilter!({
+                            kind: "iteration",
+                            fieldId: chip.fieldId,
+                            iterationId: chip.valueId,
+                          });
+                        }
+                      }
+                    : undefined
+                }
+                className={`inline-flex items-center gap-1 px-1.5 py-px rounded text-[10px] ${
+                  filterable ? "active:opacity-60" : ""
+                }`}
+                style={{
+                  backgroundColor: `${chip.color}${active ? "44" : "18"}`,
+                  color: chip.color,
+                  border: `${active ? "2px" : "1px"} solid ${chip.color}${
+                    active ? "99" : "33"
+                  }`,
+                }}
+                title={
+                  filterable
+                    ? `${chip.name} — tap to ${
+                        active ? "remove" : "add"
+                      } filter`
+                    : chip.name
+                }
+              >
+                {chip.value}
+              </span>
+            );
+          })}
           {assignees.length > 0 && (
             <span className="inline-flex items-center gap-0.5">
               {assignees.slice(0, 5).map((u) => (

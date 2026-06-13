@@ -10,13 +10,63 @@ import {
   archiveItem,
   fetchProject,
   fetchProjectItems,
-  fetchItem,
 } from "../lib/github";
 import { selectColor, timeAgo } from "../lib/format";
 import ItemRow from "./ItemRow";
 import DraftItemForm from "./DraftItemForm";
-import FieldEditor from "./FieldEditor";
 import { ItemDetailView } from "./ItemDetail";
+
+/**
+ * A filter added by tapping a chip on an item row. Filters within the same
+ * field OR together; filters across different fields AND together.
+ * The parent filter sits alongside but is stored separately because its
+ * candidates are added through a select, not by tapping a row chip.
+ */
+type ChipFilter =
+  | { kind: "single_select"; fieldId: string; optionId: string }
+  | { kind: "iteration"; fieldId: string; iterationId: string };
+
+function chipFilterKey(f: ChipFilter): string {
+  return f.kind === "single_select"
+    ? `ss:${f.fieldId}:${f.optionId}`
+    : `it:${f.fieldId}:${f.iterationId}`;
+}
+
+interface ResolvedChip {
+  filter: ChipFilter;
+  fieldName: string;
+  valueName: string;
+  color: string;
+}
+
+function resolveChipFilter(
+  filter: ChipFilter,
+  fields: FieldDef[],
+): ResolvedChip | null {
+  const field = fields.find((f) => f.id === filter.fieldId);
+  if (!field) return null;
+  if (filter.kind === "single_select") {
+    const opt = field.options?.find((o) => o.id === filter.optionId);
+    if (!opt) return null;
+    return {
+      filter,
+      fieldName: field.name,
+      valueName: opt.name,
+      color: selectColor(opt.color),
+    };
+  }
+  const iter = [
+    ...(field.iterations ?? []),
+    ...(field.completedIterations ?? []),
+  ].find((it) => it.id === filter.iterationId);
+  if (!iter) return null;
+  return {
+    filter,
+    fieldName: field.name,
+    valueName: iter.title,
+    color: selectColor("BLUE"),
+  };
+}
 
 const NONE_KEY = "__none__";
 
@@ -138,13 +188,10 @@ export default function ProjectView({
   const [collapsed, setCollapsedState] =
     useState<Record<string, boolean>>(loadCollapsed);
   const [parentFilterId, setParentFilterId] = useState<string>("");
+  const [chipFilters, setChipFilters] = useState<ChipFilter[]>([]);
   const [showAddDraft, setShowAddDraft] = useState(false);
   const [archivingKey, setArchivingKey] = useState<string | null>(null);
   const [expandedItemId, setExpandedItemId] = useState<string | null>(null);
-  const [editingField, setEditingField] = useState<{
-    itemId: string;
-    fieldId: string;
-  } | null>(null);
 
   const handleItemUpdated = useCallback(
     (updated: ProjectItem) => {
@@ -336,14 +383,72 @@ export default function ProjectView({
     ? subIssueProgress.get(selectedParent.id) ?? null
     : null;
 
-  const filteredItems = useMemo(() => {
-    if (!parentFilterId) return items;
-    return items.filter((i) => {
-      const c = i.content;
-      if (c.kind !== "Issue") return false;
-      return c.issueId === parentFilterId || c.parent?.id === parentFilterId;
+  const toggleChipFilter = useCallback((filter: ChipFilter) => {
+    setChipFilters((prev) => {
+      const key = chipFilterKey(filter);
+      const i = prev.findIndex((f) => chipFilterKey(f) === key);
+      if (i >= 0) {
+        return prev.filter((_, j) => j !== i);
+      }
+      return [...prev, filter];
     });
-  }, [items, parentFilterId]);
+  }, []);
+
+  const isChipActive = useCallback(
+    (fieldId: string, valueId: string): boolean =>
+      chipFilters.some(
+        (f) =>
+          f.fieldId === fieldId &&
+          ((f.kind === "single_select" && f.optionId === valueId) ||
+            (f.kind === "iteration" && f.iterationId === valueId)),
+      ),
+    [chipFilters],
+  );
+
+  const clearAllFilters = useCallback(() => {
+    setParentFilterId("");
+    setChipFilters([]);
+  }, []);
+
+  /**
+   * Apply parent filter and chip filters together.
+   * - Within a single field: OR across that field's selected values.
+   * - Across different fields: AND.
+   * - Parent filter ANDs with everything.
+   */
+  const filteredItems = useMemo(() => {
+    if (!parentFilterId && chipFilters.length === 0) return items;
+
+    // Group chip filters by fieldId so same-field filters OR within the group.
+    const byField = new Map<string, ChipFilter[]>();
+    for (const f of chipFilters) {
+      const arr = byField.get(f.fieldId) ?? [];
+      arr.push(f);
+      byField.set(f.fieldId, arr);
+    }
+
+    return items.filter((i) => {
+      if (parentFilterId) {
+        const c = i.content;
+        if (c.kind !== "Issue") return false;
+        if (c.issueId !== parentFilterId && c.parent?.id !== parentFilterId)
+          return false;
+      }
+      for (const [fid, group] of byField) {
+        const v = i.fieldValues[fid];
+        if (!v) return false;
+        const ok = group.some((f) => {
+          if (f.kind === "single_select" && v.kind === "SINGLE_SELECT")
+            return v.optionId === f.optionId;
+          if (f.kind === "iteration" && v.kind === "ITERATION")
+            return v.iterationId === f.iterationId;
+          return false;
+        });
+        if (!ok) return false;
+      }
+      return true;
+    });
+  }, [items, parentFilterId, chipFilters]);
 
   const buckets = useMemo(() => {
     if (!groupField)
@@ -401,6 +506,16 @@ export default function ProjectView({
       ) ?? [],
     [project],
   );
+
+  const resolvedChips = useMemo<ResolvedChip[]>(
+    () =>
+      chipFilters
+        .map((f) => resolveChipFilter(f, project?.fields ?? []))
+        .filter((c): c is ResolvedChip => c !== null),
+    [chipFilters, project],
+  );
+
+  const hasAnyFilter = !!parentFilterId || resolvedChips.length > 0;
 
   if (loading && !project) {
     return (
@@ -467,7 +582,7 @@ export default function ProjectView({
           ))}
         </select>
         <span className="ml-auto text-xs text-[var(--text-secondary)]">
-          {parentFilterId
+          {hasAnyFilter
             ? `${filteredItems.length}/${items.length}`
             : `${items.length} item${items.length === 1 ? "" : "s"}`}
         </span>
@@ -524,6 +639,58 @@ export default function ProjectView({
               ✕
             </button>
           )}
+        </div>
+      )}
+
+      {/* Active filters bar — appears when any filter is set, lists every
+          active filter as a removable chip plus a Clear all button. */}
+      {hasAnyFilter && (
+        <div className="flex flex-wrap items-center gap-1.5 px-4 py-2 border-b border-[var(--border)]">
+          <span className="text-xs text-[var(--text-secondary)] mr-1">
+            Filters
+          </span>
+          {selectedParent && (
+            <span className="inline-flex items-center gap-1 pl-2 pr-1 py-0.5 rounded text-[10px] bg-[var(--bg-tertiary)] text-[var(--text-primary)] border border-[var(--border)]">
+              <span className="text-[var(--text-secondary)]">Parent:</span>
+              <span className="truncate max-w-[12em]">
+                {selectedParent.repo}#{selectedParent.number}
+              </span>
+              <button
+                onClick={() => setParentFilterId("")}
+                className="text-[var(--text-secondary)] active:opacity-80 px-1"
+                title="Remove filter"
+              >
+                ✕
+              </button>
+            </span>
+          )}
+          {resolvedChips.map((c) => (
+            <span
+              key={chipFilterKey(c.filter)}
+              className="inline-flex items-center gap-1 pl-2 pr-1 py-0.5 rounded text-[10px]"
+              style={{
+                backgroundColor: `${c.color}18`,
+                color: c.color,
+                border: `1px solid ${c.color}44`,
+              }}
+            >
+              <span className="opacity-70">{c.fieldName}:</span>
+              <span>{c.valueName}</span>
+              <button
+                onClick={() => toggleChipFilter(c.filter)}
+                className="opacity-70 active:opacity-100 px-1"
+                title="Remove filter"
+              >
+                ✕
+              </button>
+            </span>
+          ))}
+          <button
+            onClick={clearAllFilters}
+            className="ml-auto text-xs px-2 py-1 rounded bg-[var(--bg-tertiary)] text-[var(--text-secondary)] active:opacity-80"
+          >
+            Clear all
+          </button>
         </div>
       )}
 
@@ -601,9 +768,8 @@ export default function ProjectView({
                             prev === item.id ? null : item.id,
                           )
                         }
-                        onEditField={(itemId, fieldId) =>
-                          setEditingField({ itemId, fieldId })
-                        }
+                        onToggleFilter={toggleChipFilter}
+                        isChipActive={isChipActive}
                         subIssueProgress={
                           item.content.kind === "Issue"
                             ? subIssueProgress.get(item.content.issueId) ?? null
@@ -661,28 +827,6 @@ export default function ProjectView({
         />
       )}
 
-      {editingField && (() => {
-        const field = project.fields.find(
-          (f) => f.id === editingField.fieldId,
-        );
-        const item = items.find((i) => i.id === editingField.itemId);
-        if (!field || !item) return null;
-        return (
-          <FieldEditor
-            projectId={project.id}
-            itemId={item.id}
-            field={field}
-            current={item.fieldValues[field.id]}
-            onDone={() => {
-              setEditingField(null);
-              fetchItem(item.id)
-                .then((fresh) => handleItemUpdated(fresh))
-                .catch(() => {});
-            }}
-            onCancel={() => setEditingField(null)}
-          />
-        );
-      })()}
     </div>
   );
 }
