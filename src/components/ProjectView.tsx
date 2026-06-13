@@ -10,6 +10,7 @@ import {
   archiveItem,
   fetchProject,
   fetchProjectItems,
+  updateFieldValue,
 } from "../lib/github";
 import { selectColor, timeAgo } from "../lib/format";
 import ItemRow from "./ItemRow";
@@ -84,6 +85,36 @@ function pickDefaultGroupField(fields: FieldDef[]): string | null {
     (f) => f.name.toLowerCase() === "status",
   );
   return (status ?? singleSelects[0])?.id ?? null;
+}
+
+/**
+ * Detects the suspend→resume transition wired into the project's "状態" field.
+ * The background poller advances items whose state is the resume-target option
+ * back into a running session; we just need a one-tap path that flips the
+ * status from suspended → resume-pending. Returns null when either side of
+ * the pair is missing — the Resume button is then suppressed entirely.
+ */
+interface ResumeContext {
+  fieldId: string;
+  suspendedOptionId: string;
+  targetOptionId: string;
+}
+
+function detectResumeContext(fields: FieldDef[]): ResumeContext | null {
+  const field = fields.find(
+    (f) => f.kind === "SINGLE_SELECT" && f.name === "状態",
+  );
+  if (!field || !field.options) return null;
+  const suspended = field.options.find((o) =>
+    o.name.toLowerCase().includes("suspend"),
+  );
+  const target = field.options.find((o) => o.name.includes("復帰"));
+  if (!suspended || !target) return null;
+  return {
+    fieldId: field.id,
+    suspendedOptionId: suspended.id,
+    targetOptionId: target.id,
+  };
 }
 
 function groupKeyFor(item: ProjectItem, fieldId: string): string {
@@ -191,6 +222,7 @@ export default function ProjectView({
   const [chipFilters, setChipFilters] = useState<ChipFilter[]>([]);
   const [showAddDraft, setShowAddDraft] = useState(false);
   const [archivingKey, setArchivingKey] = useState<string | null>(null);
+  const [resumingItemId, setResumingItemId] = useState<string | null>(null);
   const [expandedItemId, setExpandedItemId] = useState<string | null>(null);
 
   const handleItemUpdated = useCallback(
@@ -517,6 +549,63 @@ export default function ProjectView({
 
   const hasAnyFilter = !!parentFilterId || resolvedChips.length > 0;
 
+  const resumeContext = useMemo<ResumeContext | null>(
+    () => (project ? detectResumeContext(project.fields) : null),
+    [project],
+  );
+
+  /**
+   * Flip the "状態" field from suspended → resume-target. The background
+   * poller picks the change up and actually restores the session; we just
+   * optimistically update the local item so the chip reflects it instantly.
+   */
+  const handleResume = useCallback(
+    async (itemId: string) => {
+      if (!project || !resumeContext) return;
+      setResumingItemId(itemId);
+      setError("");
+      try {
+        await updateFieldValue(
+          project.id,
+          itemId,
+          resumeContext.fieldId,
+          { type: "single_select", optionId: resumeContext.targetOptionId },
+        );
+        const targetOpt = project.fields
+          .find((f) => f.id === resumeContext.fieldId)
+          ?.options?.find((o) => o.id === resumeContext.targetOptionId);
+        setItems((prev) => {
+          const next = prev.map((it) => {
+            if (it.id !== itemId || !targetOpt) return it;
+            return {
+              ...it,
+              fieldValues: {
+                ...it.fieldValues,
+                [resumeContext.fieldId]: {
+                  kind: "SINGLE_SELECT" as const,
+                  optionId: targetOpt.id,
+                  name: targetOpt.name,
+                  color: targetOpt.color,
+                },
+              },
+            };
+          });
+          saveViewCache(owner, number, {
+            project,
+            items: next,
+            nextCursor,
+          });
+          return next;
+        });
+      } catch (e) {
+        setError(e instanceof Error ? e.message : String(e));
+      } finally {
+        setResumingItemId(null);
+      }
+    },
+    [project, resumeContext, owner, number, nextCursor],
+  );
+
   if (loading && !project) {
     return (
       <div className="flex items-center justify-center h-64 text-[var(--text-secondary)]">
@@ -770,6 +859,21 @@ export default function ProjectView({
                         }
                         onToggleFilter={toggleChipFilter}
                         isChipActive={isChipActive}
+                        resumable={
+                          !!resumeContext &&
+                          item.fieldValues[resumeContext.fieldId]?.kind ===
+                            "SINGLE_SELECT" &&
+                          (
+                            item.fieldValues[
+                              resumeContext.fieldId
+                            ] as {
+                              kind: "SINGLE_SELECT";
+                              optionId: string;
+                            }
+                          ).optionId === resumeContext.suspendedOptionId
+                        }
+                        resuming={resumingItemId === item.id}
+                        onResume={() => void handleResume(item.id)}
                         subIssueProgress={
                           item.content.kind === "Issue"
                             ? subIssueProgress.get(item.content.issueId) ?? null
