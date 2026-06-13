@@ -212,11 +212,15 @@ export function ItemDetailView({
   item,
   onItemUpdated,
   embedded = false,
+  onOpenDetail,
 }: {
   project: ProjectDetail;
   item: ProjectItem;
   onItemUpdated?: (item: ProjectItem) => void;
   embedded?: boolean;
+  /** When embedded, the inline expand has no field table — provide a way
+   *  to jump to the full detail page where all fields can be edited. */
+  onOpenDetail?: () => void;
 }) {
   const [editFieldId, setEditFieldId] = useState<string | null>(null);
   const [editingDraft, setEditingDraft] = useState(false);
@@ -284,17 +288,29 @@ export function ItemDetailView({
         </div>
       )}
 
-      {/* Compact link row — embedded mode only, for Issue / PR */}
-      {embedded && url && (
-        <div className="px-4 py-2 border-b border-[var(--border)] text-xs">
-          <a
-            href={url}
-            target="_blank"
-            rel="noopener noreferrer"
-            className="text-[var(--accent)] active:opacity-80"
-          >
-            Open on GitHub ↗
-          </a>
+      {/* Compact link row — embedded mode only. Always render when embedded
+          so the "Edit fields" entry point is reachable even for drafts and
+          items without a URL. */}
+      {embedded && (url || onOpenDetail) && (
+        <div className="px-4 py-2 border-b border-[var(--border)] flex items-center gap-4 text-xs">
+          {url && (
+            <a
+              href={url}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="text-[var(--accent)] active:opacity-80"
+            >
+              Open on GitHub ↗
+            </a>
+          )}
+          {onOpenDetail && (
+            <button
+              onClick={onOpenDetail}
+              className="text-[var(--accent)] active:opacity-80"
+            >
+              Edit fields →
+            </button>
+          )}
         </div>
       )}
 

@@ -4,6 +4,7 @@ import type {
   IssueParentRef,
   ProjectDetail,
   ProjectItem,
+  Route,
 } from "../types";
 import {
   archiveItem,
@@ -110,9 +111,11 @@ function saveViewCache(
 export default function ProjectView({
   owner,
   number,
+  navigate,
 }: {
   owner: string;
   number: number;
+  navigate: (route: Route) => void;
 }) {
   const [project, setProject] = useState<ProjectDetail | null>(
     () => loadViewCache(owner, number)?.project ?? null,
@@ -614,6 +617,14 @@ export default function ProjectView({
                             item={item}
                             onItemUpdated={handleItemUpdated}
                             embedded
+                            onOpenDetail={() =>
+                              navigate({
+                                page: "item",
+                                owner,
+                                number,
+                                itemId: item.id,
+                              })
+                            }
                           />
                         </div>
                       )}
