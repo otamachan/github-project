@@ -117,6 +117,26 @@ function detectResumeContext(fields: FieldDef[]): ResumeContext | null {
   };
 }
 
+/**
+ * Stop = move the item into a "closed/done" column. Searches every
+ * single-select field for an option whose name contains `閉じ`, and uses the
+ * first match (Status comes first in the field list, so this lands on
+ * Status."閉じて" in practice). Returns null when no such option exists.
+ */
+interface StopContext {
+  fieldId: string;
+  targetOptionId: string;
+}
+
+function detectStopContext(fields: FieldDef[]): StopContext | null {
+  for (const f of fields) {
+    if (f.kind !== "SINGLE_SELECT" || !f.options) continue;
+    const target = f.options.find((o) => o.name.includes("閉じ"));
+    if (target) return { fieldId: f.id, targetOptionId: target.id };
+  }
+  return null;
+}
+
 function groupKeyFor(item: ProjectItem, fieldId: string): string {
   const v = item.fieldValues[fieldId];
   if (!v) return NONE_KEY;
@@ -223,6 +243,7 @@ export default function ProjectView({
   const [showAddDraft, setShowAddDraft] = useState(false);
   const [archivingKey, setArchivingKey] = useState<string | null>(null);
   const [resumingItemId, setResumingItemId] = useState<string | null>(null);
+  const [stoppingItemId, setStoppingItemId] = useState<string | null>(null);
   const [expandedItemId, setExpandedItemId] = useState<string | null>(null);
 
   const handleItemUpdated = useCallback(
@@ -554,6 +575,11 @@ export default function ProjectView({
     [project],
   );
 
+  const stopContext = useMemo<StopContext | null>(
+    () => (project ? detectStopContext(project.fields) : null),
+    [project],
+  );
+
   /**
    * Flip the "状態" field from suspended → resume-target. The background
    * poller picks the change up and actually restores the session; we just
@@ -604,6 +630,58 @@ export default function ProjectView({
       }
     },
     [project, resumeContext, owner, number, nextCursor],
+  );
+
+  /**
+   * Move the item into the "閉じて" column (Status field). Optimistically
+   * updates so the chip flips instantly; the row will move groups on next
+   * render since groupKeyFor reads the updated value.
+   */
+  const handleStop = useCallback(
+    async (itemId: string) => {
+      if (!project || !stopContext) return;
+      setStoppingItemId(itemId);
+      setError("");
+      try {
+        await updateFieldValue(
+          project.id,
+          itemId,
+          stopContext.fieldId,
+          { type: "single_select", optionId: stopContext.targetOptionId },
+        );
+        const targetOpt = project.fields
+          .find((f) => f.id === stopContext.fieldId)
+          ?.options?.find((o) => o.id === stopContext.targetOptionId);
+        setItems((prev) => {
+          const next = prev.map((it) => {
+            if (it.id !== itemId || !targetOpt) return it;
+            return {
+              ...it,
+              fieldValues: {
+                ...it.fieldValues,
+                [stopContext.fieldId]: {
+                  kind: "SINGLE_SELECT" as const,
+                  optionId: targetOpt.id,
+                  name: targetOpt.name,
+                  color: targetOpt.color,
+                },
+              },
+            };
+          });
+          saveViewCache(owner, number, {
+            project,
+            items: next,
+            nextCursor,
+          });
+          return next;
+        });
+      } catch (e) {
+        setError(e instanceof Error ? e.message : String(e));
+      } finally {
+        setStoppingItemId(null);
+      }
+    },
+    [project, stopContext, owner, number, nextCursor],
   );
 
   if (loading && !project) {
@@ -845,6 +923,21 @@ export default function ProjectView({
               <div className="divide-y divide-[var(--border)]">
                 {bucket.items.map((item) => {
                   const isExpanded = item.id === expandedItemId;
+                  const resumeField = resumeContext
+                    ? item.fieldValues[resumeContext.fieldId]
+                    : null;
+                  const isResumable =
+                    !!resumeContext &&
+                    resumeField?.kind === "SINGLE_SELECT" &&
+                    resumeField.optionId === resumeContext.suspendedOptionId;
+                  const stopField = stopContext
+                    ? item.fieldValues[stopContext.fieldId]
+                    : null;
+                  const alreadyClosed =
+                    stopField?.kind === "SINGLE_SELECT" &&
+                    stopField.optionId === stopContext?.targetOptionId;
+                  const isStoppable =
+                    !!stopContext && !isResumable && !alreadyClosed;
                   return (
                     <div key={item.id}>
                       <ItemRow
@@ -859,21 +952,12 @@ export default function ProjectView({
                         }
                         onToggleFilter={toggleChipFilter}
                         isChipActive={isChipActive}
-                        resumable={
-                          !!resumeContext &&
-                          item.fieldValues[resumeContext.fieldId]?.kind ===
-                            "SINGLE_SELECT" &&
-                          (
-                            item.fieldValues[
-                              resumeContext.fieldId
-                            ] as {
-                              kind: "SINGLE_SELECT";
-                              optionId: string;
-                            }
-                          ).optionId === resumeContext.suspendedOptionId
-                        }
+                        resumable={isResumable}
                         resuming={resumingItemId === item.id}
                         onResume={() => void handleResume(item.id)}
+                        stoppable={isStoppable}
+                        stopping={stoppingItemId === item.id}
+                        onStop={() => void handleStop(item.id)}
                         subIssueProgress={
                           item.content.kind === "Issue"
                             ? subIssueProgress.get(item.content.issueId) ?? null
