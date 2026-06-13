@@ -936,8 +936,7 @@ export default function ProjectView({
                   const alreadyClosed =
                     stopField?.kind === "SINGLE_SELECT" &&
                     stopField.optionId === stopContext?.targetOptionId;
-                  const isStoppable =
-                    !!stopContext && !isResumable && !alreadyClosed;
+                  const isStoppable = !!stopContext && !alreadyClosed;
                   return (
                     <div key={item.id}>
                       <ItemRow
