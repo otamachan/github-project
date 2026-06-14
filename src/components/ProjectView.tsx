@@ -118,6 +118,29 @@ function detectResumeContext(fields: FieldDef[]): ResumeContext | null {
 }
 
 /**
+ * Suspend = flip 状態 to the "suspend待ち" option. The background poller
+ * picks the change up and actually pauses the session; we just flip the
+ * status. Looks for an option whose name contains both `suspend` and `待ち`
+ * (so `suspend中` is excluded).
+ */
+interface SuspendContext {
+  fieldId: string;
+  targetOptionId: string;
+}
+
+function detectSuspendContext(fields: FieldDef[]): SuspendContext | null {
+  const field = fields.find(
+    (f) => f.kind === "SINGLE_SELECT" && f.name === "状態",
+  );
+  if (!field || !field.options) return null;
+  const target = field.options.find(
+    (o) => o.name.toLowerCase().includes("suspend") && o.name.includes("待ち"),
+  );
+  if (!target) return null;
+  return { fieldId: field.id, targetOptionId: target.id };
+}
+
+/**
  * Stop = move the item into a "closed/done" column. Searches every
  * single-select field for an option whose name contains `閉じ`, and uses the
  * first match (Status comes first in the field list, so this lands on
@@ -244,6 +267,7 @@ export default function ProjectView({
   const [archivingKey, setArchivingKey] = useState<string | null>(null);
   const [resumingItemId, setResumingItemId] = useState<string | null>(null);
   const [stoppingItemId, setStoppingItemId] = useState<string | null>(null);
+  const [suspendingItemId, setSuspendingItemId] = useState<string | null>(null);
   const [expandedItemId, setExpandedItemId] = useState<string | null>(null);
 
   const handleItemUpdated = useCallback(
@@ -580,6 +604,11 @@ export default function ProjectView({
     [project],
   );
 
+  const suspendContext = useMemo<SuspendContext | null>(
+    () => (project ? detectSuspendContext(project.fields) : null),
+    [project],
+  );
+
   /**
    * Flip the "状態" field from suspended → resume-target. The background
    * poller picks the change up and actually restores the session; we just
@@ -682,6 +711,57 @@ export default function ProjectView({
       }
     },
     [project, stopContext, owner, number, nextCursor],
+  );
+
+  /**
+   * Flip 状態 to "suspend待ち". The background poller actually suspends
+   * the session; we just flip the field so the chip reflects it instantly.
+   */
+  const handleSuspend = useCallback(
+    async (itemId: string) => {
+      if (!project || !suspendContext) return;
+      setSuspendingItemId(itemId);
+      setError("");
+      try {
+        await updateFieldValue(
+          project.id,
+          itemId,
+          suspendContext.fieldId,
+          { type: "single_select", optionId: suspendContext.targetOptionId },
+        );
+        const targetOpt = project.fields
+          .find((f) => f.id === suspendContext.fieldId)
+          ?.options?.find((o) => o.id === suspendContext.targetOptionId);
+        setItems((prev) => {
+          const next = prev.map((it) => {
+            if (it.id !== itemId || !targetOpt) return it;
+            return {
+              ...it,
+              fieldValues: {
+                ...it.fieldValues,
+                [suspendContext.fieldId]: {
+                  kind: "SINGLE_SELECT" as const,
+                  optionId: targetOpt.id,
+                  name: targetOpt.name,
+                  color: targetOpt.color,
+                },
+              },
+            };
+          });
+          saveViewCache(owner, number, {
+            project,
+            items: next,
+            nextCursor,
+          });
+          return next;
+        });
+      } catch (e) {
+        setError(e instanceof Error ? e.message : String(e));
+      } finally {
+        setSuspendingItemId(null);
+      }
+    },
+    [project, suspendContext, owner, number, nextCursor],
   );
 
   if (loading && !project) {
@@ -937,6 +1017,17 @@ export default function ProjectView({
                     stopField?.kind === "SINGLE_SELECT" &&
                     stopField.optionId === stopContext?.targetOptionId;
                   const isStoppable = !!stopContext && !alreadyClosed;
+                  const suspendField = suspendContext
+                    ? item.fieldValues[suspendContext.fieldId]
+                    : null;
+                  const alreadySuspendPending =
+                    suspendField?.kind === "SINGLE_SELECT" &&
+                    suspendField.optionId ===
+                      suspendContext?.targetOptionId;
+                  const isSuspendable =
+                    !!suspendContext &&
+                    !alreadySuspendPending &&
+                    !alreadyClosed;
                   return (
                     <div key={item.id}>
                       <ItemRow
@@ -957,6 +1048,9 @@ export default function ProjectView({
                         stoppable={isStoppable}
                         stopping={stoppingItemId === item.id}
                         onStop={() => void handleStop(item.id)}
+                        suspendable={isSuspendable}
+                        suspending={suspendingItemId === item.id}
+                        onSuspend={() => void handleSuspend(item.id)}
                         subIssueProgress={
                           item.content.kind === "Issue"
                             ? subIssueProgress.get(item.content.issueId) ?? null
