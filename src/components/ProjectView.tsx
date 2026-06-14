@@ -1020,14 +1020,15 @@ export default function ProjectView({
                   const suspendField = suspendContext
                     ? item.fieldValues[suspendContext.fieldId]
                     : null;
-                  const alreadySuspendPending =
+                  // Hide Suspend whenever 状態 is already in any suspend
+                  // option (suspend中 / suspend待ち / …) — not just the
+                  // target. Otherwise an item parked in suspend中 keeps
+                  // offering a Suspend button, which is nonsense.
+                  const alreadyInSuspend =
                     suspendField?.kind === "SINGLE_SELECT" &&
-                    suspendField.optionId ===
-                      suspendContext?.targetOptionId;
+                    suspendField.name.toLowerCase().includes("suspend");
                   const isSuspendable =
-                    !!suspendContext &&
-                    !alreadySuspendPending &&
-                    !alreadyClosed;
+                    !!suspendContext && !alreadyInSuspend && !alreadyClosed;
                   return (
                     <div key={item.id}>
                       <ItemRow
