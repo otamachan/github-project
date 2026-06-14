@@ -47,6 +47,9 @@ export default function ItemRow({
   stoppable,
   stopping,
   onStop,
+  suspendable,
+  suspending,
+  onSuspend,
   subIssueProgress,
 }: {
   item: ProjectItem;
@@ -66,6 +69,10 @@ export default function ItemRow({
   stoppable?: boolean;
   stopping?: boolean;
   onStop?: () => void;
+  /** True when 状態 can be flipped to "suspend待ち" (and isn't already). */
+  suspendable?: boolean;
+  suspending?: boolean;
+  onSuspend?: () => void;
   /** Sub-issue progress derived from project items; null when this item has none. */
   subIssueProgress?: SubIssueProgress | null;
 }) {
@@ -186,6 +193,7 @@ export default function ItemRow({
         {subtitle && <span className="truncate">{subtitle}</span>}
         {((subIssueProgress && subIssueProgress.total > 0) ||
           (resumable && onResume) ||
+          (suspendable && onSuspend) ||
           (stoppable && onStop)) && (
           <div className="ml-auto flex items-center gap-2 pl-2">
             {subIssueProgress && subIssueProgress.total > 0 && (
@@ -220,6 +228,19 @@ export default function ItemRow({
                 title="Set 状態 to resume-pending"
               >
                 {resuming ? "..." : "▶ Resume"}
+              </button>
+            )}
+            {suspendable && onSuspend && (
+              <button
+                onClick={(e) => {
+                  e.stopPropagation();
+                  if (!suspending) onSuspend();
+                }}
+                disabled={suspending}
+                className="text-[10px] px-2 py-0.5 rounded bg-[var(--bg-tertiary)] text-[var(--text-secondary)] border border-[var(--border)] active:opacity-80 disabled:opacity-50"
+                title="Set 状態 to suspend待ち"
+              >
+                {suspending ? "..." : "⏸ Suspend"}
               </button>
             )}
             {stoppable && onStop && (
