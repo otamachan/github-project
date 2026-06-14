@@ -3,6 +3,7 @@ import type { Route } from "./types";
 import { clearToken, getToken } from "./lib/github";
 import { pathToRoute, routeToPath } from "./lib/router";
 import { useTheme, type Theme } from "./hooks/useTheme";
+import { usePullToRefresh, PULL_TRIGGER } from "./hooks/usePullToRefresh";
 import TokenInput from "./components/TokenInput";
 import ProjectList from "./components/ProjectList";
 import ProjectView from "./components/ProjectView";
@@ -21,6 +22,7 @@ export default function App() {
     pathToRoute(window.location.pathname),
   );
   const { theme, setTheme } = useTheme();
+  const pullDistance = usePullToRefresh();
 
   const setRoute = useCallback((r: Route) => {
     setRouteState(r);
@@ -63,6 +65,27 @@ export default function App() {
 
   return (
     <div className="min-h-screen">
+      {pullDistance > 0 && (
+        <div
+          className="fixed top-0 left-0 right-0 flex justify-center pointer-events-none z-50"
+          style={{ transform: `translateY(${pullDistance - 28}px)` }}
+        >
+          <div
+            className="bg-[var(--bg-secondary)] border border-[var(--border)] rounded-full w-8 h-8 flex items-center justify-center shadow"
+            style={{ opacity: Math.min(pullDistance / PULL_TRIGGER, 1) }}
+          >
+            <span
+              className="text-[var(--text-secondary)] text-sm leading-none"
+              style={{
+                display: "inline-block",
+                transform: `rotate(${pullDistance * 4}deg)`,
+              }}
+            >
+              ↻
+            </span>
+          </div>
+        </div>
+      )}
       <header className="sticky top-0 z-20 flex items-center h-[44px] px-3 bg-[var(--bg-secondary)] border-b border-[var(--border)]">
         {route.page !== "list" ? (
           <button
