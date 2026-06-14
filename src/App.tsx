@@ -76,6 +76,14 @@ export default function App() {
         )}
         <div className="ml-auto flex items-center gap-2">
           <button
+            onClick={() => window.location.reload()}
+            className="text-sm text-[var(--text-secondary)] active:opacity-80 px-2 py-1 rounded bg-[var(--bg-tertiary)] leading-none"
+            title="Reload"
+            aria-label="Reload"
+          >
+            ↻
+          </button>
+          <button
             onClick={cycleTheme}
             className="text-xs text-[var(--text-secondary)] active:opacity-80 px-2 py-1 rounded bg-[var(--bg-tertiary)]"
           >
